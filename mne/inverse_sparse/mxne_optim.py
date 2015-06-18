@@ -41,6 +41,16 @@ def norm_l21(A, n_orient, copy=True):
     return np.sum(np.sqrt(groups_norm2(A, n_orient)))
 
 
+def stft_norm2_list(Y, shape):
+    norm = 0
+    n_coefs = np.array(shape)[:, 1] * np.array(shape)[:, 2]
+    for i_win in range(len(n_coefs)):
+        idx = slice(i_win * max(n_coefs),
+                    i_win * max(n_coefs) + n_coefs[i_win])
+        norm += stft_norm2(Y[:, idx].reshape(*shape[i_win]))
+    return norm
+
+
 def prox_l21(Y, alpha, n_orient, shape=None, is_stft=False):
     """proximity operator for l21 norm
 
@@ -653,8 +663,16 @@ class _Phi(object):
         self.n_coefs = n_coefs
 
     def __call__(self, x):
-        return stft(x, self.wsize, self.tstep,
-                    verbose=False).reshape(-1, self.n_coefs)
+        n_coefs = self.n_coefs
+        phi = np.zeros((x.shape[0], max(n_coefs) * len(self.wsize)))
+        for i_win in range(len(self.wsize)):
+            idx = slice(i_win * max(n_coefs),
+                        i_win * max(n_coefs) + n_coefs[i_win])
+            phi[:, idx] = stft(
+                x, self.wsize[i_win], self.tstep[i_win],
+                verbose=False).reshape(-1, n_coefs[i_win]) \
+                / np.sqrt(len(self.wsize))
+        return phi
 
 
 class _PhiT(object):
@@ -667,19 +685,40 @@ class _PhiT(object):
         self.n_times = n_times
 
     def __call__(self, z):
-        return istft(z.reshape(-1, self.n_freq, self.n_step), self.tstep,
-                     self.n_times)
+        n_coefs = self.n_step * self.n_freq
+        phiT = np.zeros((z.shape[0], self.n_times))
+        for i_win in range(len(self.tstep)):
+            idx = slice(i_win * max(n_coefs),
+                        i_win * max(n_coefs) + n_coefs[i_win])
+            phiT += istft(z[:, idx].reshape(-1, self.n_freq[i_win],
+                                            self.n_step[i_win]),
+                          self.tstep[i_win], self.n_times)
+        return phiT
 
 
 @verbose
 def norm_l21_tf(Z, shape, n_orient):
     if Z.shape[0]:
-        Z2 = Z.reshape(*shape)
-        l21_norm = np.sqrt(stft_norm2(Z2).reshape(-1, n_orient).sum(axis=1))
+        # Z2 = Z.reshape(*shape)
+        # l21_norm = np.sqrt(stft_norm2(Z2).reshape(-1, n_orient).sum(axis=1))
+        l21_norm = np.sqrt(
+            stft_norm2_list(Z, shape).reshape(-1, n_orient).sum(axis=1))
         l21_norm = l21_norm.sum()
     else:
         l21_norm = 0.
     return l21_norm
+
+
+def norm_l1_tf_list(Z, shape, n_positions):
+    norm = 0
+    n_coefs = np.array(shape)[:, 1] * np.array(shape)[:, 2]
+    for i_win in range(len(n_coefs)):
+        idx = slice(i_win * max(n_coefs),
+                    i_win * max(n_coefs) + n_coefs[i_win])
+        Z_ = Z[idx].reshape((n_positions, -1), order='F').reshape(shape[i_win])
+        norm += (2. * Z_.sum(axis=2).sum(axis=1) - np.sum(Z_[:, 0, :],
+                 axis=1) - np.sum(Z_[:, -1, :], axis=1))
+    return norm.sum()
 
 
 @verbose
@@ -688,10 +727,11 @@ def norm_l1_tf(Z, shape, n_orient):
         n_positions = Z.shape[0] // n_orient
         Z_ = np.sqrt(np.sum((np.abs(Z) ** 2.).reshape((n_orient, -1),
                      order='F'), axis=0))
-        Z_ = Z_.reshape((n_positions, -1), order='F').reshape(*shape)
-        l1_norm = (2. * Z_.sum(axis=2).sum(axis=1) - np.sum(Z_[:, 0, :],
-                   axis=1) - np.sum(Z_[:, -1, :], axis=1))
-        l1_norm = l1_norm.sum()
+        # Z_ = Z_.reshape((n_positions, -1), order='F').reshape(*shape)
+        # l1_norm = (2. * Z_.sum(axis=2).sum(axis=1) - np.sum(Z_[:, 0, :],
+        #            axis=1) - np.sum(Z_[:, -1, :], axis=1))
+        # l1_norm = l1_norm.sum()
+        l1_norm = norm_l1_tf_list(Z_, shape, n_positions)
     else:
         l1_norm = 0.
     return l1_norm
@@ -765,9 +805,9 @@ def _tf_mixed_norm_solver_prox(M, G, alpha, rho, lipschitz_constant, phi,
     n_sensors, n_times = M.shape
     n_sources = G.shape[1]
 
-    n_step = int(ceil(n_times / float(tstep)))
+    n_step = np.ceil(n_times / tstep.astype(float)).astype(int)
     n_freq = wsize // 2 + 1
-    shape = (-1, n_freq, n_step)
+    shape = [(-1, n_freq[ii], n_step[ii]) for ii in range(len(n_freq))]
     n_coefs = n_step * n_freq
 
     if Z_init is None:
@@ -932,9 +972,9 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha, rho,
     n_sources = G.shape[1]
     n_positions = n_sources // n_orient
 
-    n_step = int(ceil(n_times / float(tstep)))
+    n_step = np.ceil(n_times / tstep.astype(float)).astype(int)
     n_freq = wsize // 2 + 1
-    shape = (-1, n_freq, n_step)
+    shape = [(-1, n_freq[ii], n_step[ii]) for ii in range(len(n_freq))]
 
     G = dict(zip(np.arange(n_positions), np.hsplit(G, n_positions)))
     R = M.copy()  # residual
@@ -951,7 +991,6 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha, rho,
 
     converged = False
 
-    1 / 0
     for i in range(maxit):
         val_norm_l21_tf = 0.0
         val_norm_l1_tf = 0.0
@@ -1002,8 +1041,9 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha, rho,
 
                     # l21
                     shape_init = Z_j_new.shape
-                    Z_j_new = Z_j_new.reshape(*shape)
-                    row_norm = np.sqrt(stft_norm2(Z_j_new).sum())
+                    # Z_j_new = Z_j_new.reshape(*shape)
+                    # row_norm = np.sqrt(stft_norm2(Z_j_new).sum())
+                    row_norm = np.sqrt(stft_norm2_list(Z_j_new, shape).sum())
                     if row_norm <= alpha_space_lc[j]:
                         Z[j] = 0.0
                         active_set_j[:] = False
@@ -1031,7 +1071,7 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha, rho,
             logger.info("Iteration %d :: pobj %f :: n_active %d" % (i + 1,
                         pobj, np.sum(active_set) / n_orient))
         else:
-            logger.info("Iteration %d" % i + 1)
+            logger.info("Iteration %d" % (i + 1))
 
         if perc is not None:
             if np.sum(active_set) / float(n_orient) <= perc * n_positions:
@@ -1080,7 +1120,7 @@ def _tf_mixed_norm_solver_bcd(M, G, alpha, rho, lipschitz_constant, phi, phiT,
         X = phiT(Z)
     else:
         n_sensors, n_times = M.shape
-        n_step = int(ceil(n_times / float(tstep)))
+        n_step = np.ceil(n_times / tstep.astype(float)).astype(int)
         n_freq = wsize // 2 + 1
         Z = np.zeros((0, n_step * n_freq), dtype=np.complex)
         X = np.zeros((0, n_times))
@@ -1150,7 +1190,7 @@ def _tf_mixed_norm_solver_bcd_glmnet(M, G, alpha, rho, lipschitz_constant,
         X = phiT(Z)
     else:
         n_sensors, n_times = M.shape
-        n_step = int(ceil(n_times / float(tstep)))
+        n_step = np.ceil(n_times / tstep.astype(float)).astype(int)
         n_freq = wsize // 2 + 1
         Z = np.zeros((0, n_step * n_freq), dtype=np.complex)
         X = np.zeros((0, n_times))
@@ -1161,7 +1201,8 @@ def _tf_mixed_norm_solver_bcd_glmnet(M, G, alpha, rho, lipschitz_constant,
 def _alpha_max_fun(alpha, rho, GTM, shape):
     thresh = GTM * np.maximum(1. - (alpha * rho) / np.maximum(np.abs(GTM),
                               alpha * rho), 0.0)
-    alpha_max = stft_norm2(thresh.reshape(*shape)).sum()
+    # alpha_max = stft_norm2(thresh.reshape(*shape)).sum()
+    alpha_max = stft_norm2_list(thresh[np.newaxis, :], shape).sum()
     alpha_max -= ((1. - rho) * alpha) ** 2
     return alpha_max
 
@@ -1233,9 +1274,9 @@ def tf_mixed_norm_solver(M, G, alpha, rho, wsize=64, tstep=4, n_orient=1,
         Regularization parameter for temporal sparsity. It set to 0,
         no temporal regularization is applied. It this case, TF-MxNE is
         equivalent to MxNE with L21 norm.
-    wsize: int
+    wsize: XXX int
         length of the STFT window in samples (must be a multiple of 4).
-    tstep: int
+    tstep: XXX int
         step between successive windows in samples (must be a multiple of 2,
         a divider of wsize and smaller than wsize/2) (default: wsize/2).
     n_orient : int
@@ -1275,9 +1316,9 @@ def tf_mixed_norm_solver(M, G, alpha, rho, wsize=64, tstep=4, n_orient=1,
     n_sensors, n_sources = G.shape
     n_positions = n_sources // n_orient
 
-    n_step = int(ceil(n_times / float(tstep)))
+    n_step = np.ceil(n_times / tstep.astype(float)).astype(int)
     n_freq = wsize / 2 + 1
-    shape = (-1, n_freq, n_step)
+    shape = [(-1, n_freq[ii], n_step[ii]) for ii in range(len(n_freq))]
     n_coefs = n_step * n_freq
     phi = _Phi(wsize, tstep, n_coefs)
     phiT = _PhiT(tstep, n_freq, n_step, n_times)
