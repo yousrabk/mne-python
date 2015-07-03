@@ -17,7 +17,8 @@ from ..utils import logger, verbose
 from ..externals.six.moves import xrange as range
 
 from .mxne_optim import (mixed_norm_solver, iterative_mixed_norm_solver,
-                         norm_l2inf, tf_mixed_norm_solver)
+                         norm_l2inf, tf_mixed_norm_solver,
+                         iterative_tf_mixed_norm_solver)
 
 
 @verbose
@@ -366,7 +367,7 @@ def tf_mixed_norm(evoked, forward, noise_cov, alpha_space, alpha_time,
                   loose=0.2, depth=0.8, maxit=3000, tol=1e-4,
                   weights=None, weights_min=None, pca=True, debias=True,
                   wsize=64, tstep=4, window=0.02, return_residual=False,
-                  verbose=None):
+                  n_tfmxne_iter=1, verbose=None):
     """Time-Frequency Mixed-norm estimate (TF-MxNE)
 
     Compute L1/L2 + L1 mixed-norm solution on time frequency
@@ -436,6 +437,9 @@ def tf_mixed_norm(evoked, forward, noise_cov, alpha_space, alpha_time,
         and right window length.
     return_residual : bool
         If True, the residual is returned as an Evoked instance.
+    n_tfmxne_iter : int
+        The number of MxNE iterations. If > 1, iterative reweighting
+        is applied.
     verbose : bool, str, int, or None
         If not None, override default verbose level (see mne.verbose).
 
@@ -487,10 +491,16 @@ def tf_mixed_norm(evoked, forward, noise_cov, alpha_space, alpha_time,
     gain /= alpha_max
     source_weighting /= alpha_max
 
-    X, active_set, E = tf_mixed_norm_solver(
-        M, gain, alpha_space, alpha_time, wsize=wsize, tstep=tstep,
-        maxit=maxit, tol=tol, verbose=verbose, n_orient=n_dip_per_pos,
-        log_objective=False, debias=debias)
+    if n_tfmxne_iter == 1:
+        X, active_set, E = tf_mixed_norm_solver(
+            M, gain, alpha_space, alpha_time, wsize=wsize, tstep=tstep,
+            maxit=maxit, tol=tol, verbose=verbose, n_orient=n_dip_per_pos,
+            log_objective=False, debias=debias)
+    else:
+        X, active_set, E = iterative_tf_mixed_norm_solver(
+            M, gain, alpha_space, alpha_time, n_tfmxne_iter, wsize=wsize,
+            tstep=tstep, maxit=maxit, tol=tol, debias=debias,
+            n_orient=n_dip_per_pos, log_objective=False, verbose=verbose)
 
     if active_set.sum() == 0:
         raise Exception("No active dipoles found. "

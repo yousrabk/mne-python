@@ -697,10 +697,10 @@ def norm_l1_tf(Z, shape, n_orient):
 
 @verbose
 def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
-                               lipschitz_constant, phi, phiT,
-                               wsize=64, tstep=4, n_orient=1,
-                               maxit=200, tol=1e-8, log_objective=True,
-                               perc=None, verbose=None):
+                               lipschitz_constant, phi, phiT, w_space, w_time,
+                               wsize=64, tstep=4, n_orient=1, maxit=200,
+                               tol=1e-8, log_objective=True, perc=None,
+                               verbose=None):
     # First make G fortran for faster access to blocks of columns
     G = np.asfortranarray(G)
 
@@ -720,8 +720,15 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
 
     E = []  # track cost function
 
-    alpha_time_lc = alpha_time / lipschitz_constant
-    alpha_space_lc = alpha_space / lipschitz_constant
+    if w_time is None:
+        alpha_time_lc = alpha_time / lipschitz_constant
+    else:
+        alpha_time_lc = alpha_time * w_time / lipschitz_constant[:, None]
+
+    if w_space is None:
+        alpha_space_lc = alpha_space / lipschitz_constant
+    else:
+        alpha_space_lc = alpha_space * w_space / lipschitz_constant
 
     converged = False
 
@@ -789,11 +796,17 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
                         active_set_j[:] = True
                         R -= np.dot(G_j, phiT(Z[j]))
 
-                        if log_objective:
-                            val_norm_l21_tf += norm_l21_tf(
+                        if w_space is None:
+                            val_norm_l21_tf += norm_l21_tf(Z[j], shape,
+                                                           n_orient)
+                        else:
+                            val_norm_l21_tf += w_space[j] * norm_l21_tf(
                                 Z[j], shape, n_orient)
+                        if w_time is None:
+                            val_norm_l1_tf += norm_l1_tf(Z[j], shape, n_orient)
+                        else:
                             val_norm_l1_tf += norm_l1_tf(
-                                Z[j], shape, n_orient)
+                                Z[j] * w_time[j][None, :], shape, n_orient)
 
             max_diff = np.maximum(max_diff, np.max(np.abs(Z[j] - Z0)))
 
@@ -822,8 +835,9 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
 @verbose
 def _tf_mixed_norm_solver_bcd_active_set(
         M, G, alpha_space, alpha_time, lipschitz_constant, phi, phiT,
-        Z_init=None, wsize=64, tstep=4, n_orient=1, maxit=200, tol=1e-8,
-        log_objective=True, perc=None, verbose=None):
+        Z_init=None, w_space=None, w_time=None, wsize=64, tstep=4,
+        n_orient=1, maxit=200, tol=1e-8, log_objective=True,
+        perc=None, verbose=None):
     """Solves TF L21+L1 inverse solver with BCD and active set approach
 
     Algorithm is detailed in:
@@ -856,6 +870,10 @@ def _tf_mixed_norm_solver_bcd_active_set(
     Z_init : None | array
         The initialization of the TF coefficient matrix. If None, zeros
         will be used for all coefficients.
+    w_space : XXX
+        XXX
+    w_time : XXX
+        XXX
     wsize: int
         length of the STFT window in samples (must be a multiple of 4).
     tstep: int
@@ -909,20 +927,34 @@ def _tf_mixed_norm_solver_bcd_active_set(
 
     Z, active_set, E, _ = _tf_mixed_norm_solver_bcd_(
         M, G, Z, active_set, alpha_space, alpha_time, lipschitz_constant,
-        phi, phiT, wsize=wsize, tstep=tstep, n_orient=n_orient, maxit=1,
-        tol=tol, log_objective=log_objective, perc=None, verbose=verbose)
+        phi, phiT, w_space=w_space, w_time=w_time, wsize=wsize, tstep=tstep,
+        n_orient=n_orient, maxit=1, tol=tol, log_objective=log_objective,
+        perc=None, verbose=verbose)
 
     while active_set.sum():
         active = np.where(active_set)[0][::n_orient] // n_orient
         Z_init = dict(zip(range(len(active)), [Z[idx] for idx in active]))
+
+        if w_space is None:
+            _w_space = None
+        else:
+            _w_space = w_space[active_set[::n_orient]]
+
+        if w_time is None:
+            _w_time = None
+        else:
+            _w_time = w_time[active_set[::n_orient]]
+
         Z, as_, E_tmp, converged = _tf_mixed_norm_solver_bcd_(
             M, G[:, active_set], Z_init,
             np.ones(len(active) * n_orient, dtype=np.bool),
             alpha_space, alpha_time,
             lipschitz_constant[active_set[::n_orient]],
-            phi, phiT, wsize=wsize, tstep=tstep, n_orient=n_orient,
+            phi, phiT, w_space=_w_space, w_time=_w_time,
+            wsize=wsize, tstep=tstep, n_orient=n_orient,
             maxit=maxit, tol=tol, log_objective=log_objective,
-            perc=0.5, verbose=verbose)
+            perc=0.5, verbose=verbose)  # Why 0.5?
+
         E += E_tmp
         active = np.where(active_set)[0][::n_orient] // n_orient
         Z_init = dict.fromkeys(range(n_positions), 0.0)
@@ -931,9 +963,9 @@ def _tf_mixed_norm_solver_bcd_active_set(
         active_set_0 = active_set.copy()
         Z, active_set, E_tmp, _ = _tf_mixed_norm_solver_bcd_(
             M, G, Z_init, active_set, alpha_space, alpha_time,
-            lipschitz_constant, phi, phiT, wsize=wsize, tstep=tstep,
-            n_orient=n_orient, maxit=1, tol=tol, log_objective=log_objective,
-            perc=None, verbose=verbose)
+            lipschitz_constant, phi, phiT, w_space=w_space, w_time=w_time,
+            wsize=wsize, tstep=tstep, n_orient=n_orient, maxit=1, tol=tol,
+            log_objective=log_objective, perc=None, verbose=verbose)
         E += E_tmp
         if converged:
             if np.array_equal(active_set_0, active_set):
@@ -1040,6 +1072,132 @@ def tf_mixed_norm_solver(M, G, alpha_space, alpha_time, wsize=64, tstep=4,
         log_objective=log_objective, verbose=None)
 
     if np.any(active_set) and debias:
+        bias = compute_bias(M, G[:, active_set], X, n_orient=n_orient)
+        X *= bias[:, np.newaxis]
+
+    return X, active_set, E
+
+
+@verbose
+def iterative_tf_mixed_norm_solver(M, G, alpha_space, alpha_time,
+                                   n_tfmxne_iter, wsize=64, tstep=4,
+                                   maxit=3000, tol=1e-8, debias=True,
+                                   n_orient=1, log_objective=True,
+                                   verbose=None):
+    """
+    XXX
+    """
+    n_sensors, n_times = M.shape
+    n_sensors, n_sources = G.shape
+    n_positions = n_sources // n_orient
+
+    n_step = int(ceil(n_times / float(tstep)))
+    n_freq = wsize // 2 + 1
+    shape = (-1, n_freq, n_step)
+    n_coefs = n_step * n_freq
+    phi = _Phi(wsize, tstep, n_coefs)
+    phiT = _PhiT(tstep, n_freq, n_step, n_times)
+
+    if n_orient == 1:
+        lc = np.sum(G * G, axis=0)
+    else:
+        lc = np.empty(n_positions)
+        for j in range(n_positions):
+            G_tmp = G[:, (j * n_orient):((j + 1) * n_orient)]
+            lc[j] = linalg.norm(np.dot(G_tmp.T, G_tmp), ord=2)
+
+    if n_tfmxne_iter < 1:
+        raise Exception('TF-MxNE has to be computed at least 1 time.')
+
+    # lp-norm
+    g_space = lambda w, eps: np.sqrt(np.sqrt(stft_norm2(w.reshape(
+        *shape)).reshape(-1, n_orient).sum(axis=1)) + eps)
+    g_space_prime = lambda w, eps: 2. * g_space(w, eps)
+
+    g_time = lambda w, eps: np.sqrt(np.sqrt(np.sum((np.abs(w) ** 2.).reshape(
+        (n_orient, -1), order='F'), axis=0)).reshape((-1, w.shape[1]),
+                                                     order='F') + eps)
+    g_time_prime = lambda w, eps: 2. * g_time(w, eps)
+
+    E = list()
+
+    active_set = np.ones(n_sources, dtype=np.bool)
+    Z = np.zeros((n_sources, n_coefs), dtype=np.complex)  # XXX big !!!
+
+    eps_act = 0.0
+
+    maxdiff = list()
+
+    for innerit in range(n_tfmxne_iter):
+        active_set_0 = active_set.copy()
+        Z0 = Z.copy()
+
+        if innerit == 0:
+            w_space = None
+            w_time = None
+        else:
+            w_space = 1. / g_space_prime(Z, eps_act)
+            w_time = g_time_prime(Z, eps_act)
+            w_time[w_time == 0.0] = 1e-10  # XXX why?
+
+            w_time = 1. / w_time
+
+            # w_space = 1. / g_space_prime(Z.copy(), eps_act)
+            # w_time = None
+
+            # w_space = None
+            # w_time = g_time_prime(Z.copy(), eps_act)
+            # w_time[w_time == 0.0] = 1e-20
+            # w_time = 1. / w_time
+
+        X, Z, active_set_, E = _tf_mixed_norm_solver_bcd_active_set(
+            M, G[:, active_set], alpha_space, alpha_time,
+            lc[active_set[::n_orient]], phi, phiT, Z_init=Z, w_space=w_space,
+            w_time=w_time, wsize=wsize, tstep=tstep, n_orient=n_orient,
+            maxit=maxit, tol=tol, log_objective=log_objective, verbose=None)
+
+        active_set[active_set] = active_set_
+
+        if active_set.sum() > 0:
+            val_norm_l21_tf = np.sum(g_space(Z.copy(), eps_act))
+            val_norm_l1_tf = g_time(Z.copy(), eps_act).reshape(*shape)
+            val_norm_l1_tf = (2. * val_norm_l1_tf.sum(axis=2).sum(axis=1) -
+                              np.sum(val_norm_l1_tf[:, 0, :], axis=1) -
+                              np.sum(val_norm_l1_tf[:, -1, :], axis=1)).sum()
+
+            p_obj = (0.5 * linalg.norm(M - np.dot(G[:, active_set],  X),
+                     'fro') ** 2. + alpha_space * val_norm_l21_tf +
+                     alpha_time * val_norm_l1_tf)
+            # E.append(p_obj)
+
+            max_diff = list()
+            max_diff.append(np.max(
+                safe_max_abs(Z, True - active_set_0[active_set])))
+            max_diff.append(safe_max_abs(Z0, True - active_set[active_set_0]))
+            max_diff.append(safe_max_abs_diff(Z, active_set_0[active_set],
+                            Z0, active_set[active_set_0]))
+            max_diff = np.amax(max_diff)
+            stop = max_diff < tol
+            maxdiff.append(max_diff)
+
+            logger.info('Iteration %d: as_size=%d, E=%f, maxdiff=%f' % (
+                        innerit + 1, active_set.sum() / n_orient, p_obj,
+                        max_diff))
+
+            if np.array_equal(active_set, active_set_0):
+                if stop:
+                    print('Convergence reached after %d '
+                          'inner reweightings!' % innerit)
+                    break
+        else:
+            p_obj = 0.5 * linalg.norm(M) ** 2.
+            E.append(p_obj)
+            logger.info('Iteration %d: as_size=%d, E=%f' % (
+                        innerit + 1, active_set.sum() / n_orient, p_obj))
+            maxdiff.append(0.0)
+            break
+
+    if debias and active_set.sum() > 0:
         bias = compute_bias(M, G[:, active_set], X, n_orient=n_orient)
         X *= bias[:, np.newaxis]
 
