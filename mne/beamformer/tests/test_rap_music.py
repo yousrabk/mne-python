@@ -1,152 +1,70 @@
-# Authors: Yousra Bekhti <yousra.bekhti@gmail.com>
-#          Alexandre Gramfort <alexandre.gramfort@telecom-paristech.fr>
+"""
+================================
+Compute Rap-Music on evoked data
+================================
+
+Compute a Recursively Applied and Projected MUltiple Signal Classification
+(RAP-MUSIC) on evoked dataset.
+
+The reference for Rap-Music is:
+J.C. Mosher and R.M. Leahy. 1999. Source localization using recursively
+applied and projected (RAP) MUSIC. Trans. Sig. Proc. 47, 2
+(February 1999), 332-340.
+DOI=10.1109/78.740118 http://dx.doi.org/10.1109/78.740118
+"""
+
+# Author: Yousra Bekhti <yousra.bekhti@gmail.com>
 #
 # License: BSD (3-clause)
 
-import os.path as op
 import numpy as np
 from scipy import linalg
 
-import warnings
-from nose.tools import assert_true
+import matplotlib.pyplot as plt
 
-import mne
-from mne.datasets import testing
-from mne.beamformer import rap_music
-from mne.utils import run_tests_if_main
+from mne.beamformer._rap_music import _apply_rap_music
 
 
-data_path = testing.data_path(download=False)
-fname_ave = op.join(data_path, 'MEG', 'sample', 'sample_audvis-ave.fif')
-fname_cov = op.join(data_path, 'MEG', 'sample', 'sample_audvis_trunc-cov.fif')
-fname_fwd = op.join(data_path, 'MEG', 'sample',
-                    'sample_audvis_trunc-meg-eeg-oct-4-fwd.fif')
+n_orient = 3
+n_points = 200
+n_sensors = 20
+n_times = 50
 
-warnings.simplefilter('always')  # enable b/c these tests throw warnings
+G = np.random.multivariate_normal(np.zeros(n_points * n_orient),
+                                  np.eye(n_points * n_orient), n_sensors)
 
+active_idx = np.array([25, 75, 125, 175])
+active_set = np.zeros(n_points * n_orient, dtype=np.bool)
+X_sim = np.zeros((n_points * n_orient, n_times))
+times = np.linspace(0, 1., num=n_times, endpoint=False)
+activation = np.array([np.sin(2 * np.pi * 1. * times) * 100.,
+                       np.sin(2 * np.pi * 1. * times + 0.) * 70.,
+                       np.sin(2 * np.pi * 3. * times) * 40.,
+                       np.sin(2 * np.pi * 6. * times) * 40.])
+X_sim[n_orient * active_idx[0]: n_orient * (active_idx[0] + 1)] = \
+    np.repeat(activation[0][None, :], n_orient, axis=0)
+X_sim[n_orient * active_idx[1]: n_orient * (active_idx[1] + 1)] = \
+    np.repeat(activation[1][None, :], n_orient, axis=0)
+X_sim[n_orient * active_idx[2]: n_orient * (active_idx[2] + 1)] = \
+    np.repeat(activation[2][None, :], n_orient, axis=0)
+X_sim[n_orient * active_idx[3]: n_orient * (active_idx[3] + 1)] = \
+    np.repeat(activation[3][None, :], n_orient, axis=0)
+active_set[n_orient * active_idx[0]: n_orient * (active_idx[0] + 1)] = True
+active_set[n_orient * active_idx[1]: n_orient * (active_idx[1] + 1)] = True
+active_set[n_orient * active_idx[2]: n_orient * (active_idx[2] + 1)] = True
+active_set[n_orient * active_idx[3]: n_orient * (active_idx[3] + 1)] = True
+M_GT = np.dot(G, X_sim)
 
-def _read_forward_solution_meg(fname_fwd, **kwargs):
-    fwd = mne.read_forward_solution(fname_fwd, **kwargs)
-    return mne.pick_types_forward(fwd, meg=True, eeg=False,
-                                  exclude=['MEG 2443'])
+noise = np.random.randn(n_sensors, n_times)
 
+M = M_GT + noise
 
-def _get_data(event_id=1):
-    """Read in data used in tests
-    """
-    # Read evoked
-    evoked = mne.read_evokeds(fname_ave, event_id)
-    evoked.pick_types(meg=True, eeg=False)
-    evoked.crop(0, 0.3)
+sol, source_idx_final, oris_final, max_corr = _apply_rap_music(M, G, n_orient,
+                                                               n_dipoles=4)
 
-    forward = mne.read_forward_solution(fname_fwd)
+ori_mat = linalg.block_diag(*oris_final).T
+X = np.dot(ori_mat, sol)
 
-    forward_surf_ori = _read_forward_solution_meg(fname_fwd, surf_ori=True)
-    forward_fixed = _read_forward_solution_meg(fname_fwd, force_fixed=True,
-                                               surf_ori=True)
-
-    noise_cov = mne.read_cov(fname_cov)
-
-    return evoked, noise_cov, forward, forward_surf_ori, forward_fixed
-
-
-def simu_data(evoked, forward, noise_cov, n_dipoles, times):
-    """Simulate an evoked dataset with 2 sources
-
-    One source is put in each hemisphere.
-    """
-    # Generate the two dipoles data
-    mu, sigma = 0.1, 0.005
-    s1 = 1 / (sigma * np.sqrt(2 * np.pi)) * np.exp(-(times - mu) ** 2 /
-                                                   (2 * sigma ** 2))
-
-    mu, sigma = 0.075, 0.008
-    s2 = 1 / (sigma * np.sqrt(2 * np.pi)) * np.exp(-(times - mu) ** 2 /
-                                                   (2 * sigma ** 2))
-    data = np.array([s1, s2]) * 1e-9
-
-    src = forward['src']
-    rng = np.random.RandomState(42)
-
-    rndi = rng.randint(len(src[0]['vertno']))
-    lh_vertno = src[0]['vertno'][[rndi]]
-
-    rndi = rng.randint(len(src[1]['vertno']))
-    rh_vertno = src[1]['vertno'][[rndi]]
-
-    vertices = [lh_vertno, rh_vertno]
-    tmin, tstep = times.min(), 1 / evoked.info['sfreq']
-    stc = mne.SourceEstimate(data, vertices=vertices, tmin=tmin, tstep=tstep)
-
-    sim_evoked = mne.simulation.simulate_evoked(forward, stc, evoked.info,
-                                                noise_cov, snr=20,
-                                                random_state=rng)
-
-    return sim_evoked, stc
-
-
-def _check_dipoles(dipoles, fwd, stc, evoked, residual=None):
-    src = fwd['src']
-    pos1 = fwd['source_rr'][np.where(src[0]['vertno'] ==
-                                     stc.vertices[0])]
-    pos2 = fwd['source_rr'][np.where(src[1]['vertno'] ==
-                                     stc.vertices[1])[0] +
-                            len(src[0]['vertno'])]
-
-    # Check the position of the two dipoles
-    assert_true(dipoles[0].pos[0] in np.array([pos1, pos2]))
-    assert_true(dipoles[1].pos[0] in np.array([pos1, pos2]))
-
-    ori1 = fwd['source_nn'][np.where(src[0]['vertno'] ==
-                                     stc.vertices[0])[0]][0]
-    ori2 = fwd['source_nn'][np.where(src[1]['vertno'] ==
-                                     stc.vertices[1])[0] +
-                            len(src[0]['vertno'])][0]
-
-    # Check the orientation of the dipoles
-    assert_true(np.max(np.abs(np.dot(dipoles[0].ori[0],
-                                     np.array([ori1, ori2]).T))) > 0.99)
-
-    assert_true(np.max(np.abs(np.dot(dipoles[1].ori[0],
-                                     np.array([ori1, ori2]).T))) > 0.99)
-
-    if residual is not None:
-        picks_grad = mne.pick_types(residual.info, meg='grad')
-        picks_mag = mne.pick_types(residual.info, meg='mag')
-        rel_tol = 0.02
-        for picks in [picks_grad, picks_mag]:
-            assert_true(linalg.norm(residual.data[picks], ord='fro') <
-                        rel_tol *
-                        linalg.norm(evoked.data[picks], ord='fro'))
-
-
-@testing.requires_testing_data
-def test_rap_music_simulated():
-    """Test RAP-MUSIC with simulated evoked
-    """
-    evoked, noise_cov, forward, forward_surf_ori, forward_fixed =\
-        _get_data()
-
-    n_dipoles = 2
-    sim_evoked, stc = simu_data(evoked, forward_fixed, noise_cov,
-                                n_dipoles, evoked.times)
-    # Check dipoles for fixed ori
-    dipoles = rap_music(sim_evoked, forward_fixed, noise_cov,
-                        n_dipoles=n_dipoles)
-    _check_dipoles(dipoles, forward_fixed, stc, evoked)
-
-    dipoles, residual = rap_music(sim_evoked, forward_fixed, noise_cov,
-                                  n_dipoles=n_dipoles, return_residual=True)
-    _check_dipoles(dipoles, forward_fixed, stc, evoked, residual)
-
-    # Check dipoles for free ori
-    dipoles, residual = rap_music(sim_evoked, forward, noise_cov,
-                                  n_dipoles=n_dipoles, return_residual=True)
-    _check_dipoles(dipoles, forward_fixed, stc, evoked, residual)
-
-    # Check dipoles for free surface ori
-    dipoles, residual = rap_music(sim_evoked, forward_surf_ori, noise_cov,
-                                  n_dipoles=n_dipoles, return_residual=True)
-    _check_dipoles(dipoles, forward_fixed, stc, evoked, residual)
-
-run_tests_if_main()
+plt.figure(), plt.plot(X_sim[active_set].T)
+plt.figure(), plt.plot(X.T)
+plt.show()
