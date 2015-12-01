@@ -6,14 +6,23 @@ Compute Rap-Music on evoked data
 Compute a Recursively Applied and Projected MUltiple Signal Classification
 (RAP-MUSIC) on evoked dataset.
 
-The reference for Rap-Music is:
-J.C. Mosher and R.M. Leahy. 1999. Source localization using recursively
-applied and projected (RAP) MUSIC. Trans. Sig. Proc. 47, 2
-(February 1999), 332-340.
-DOI=10.1109/78.740118 http://dx.doi.org/10.1109/78.740118
+The reference for Rap-Music are:
+J.C. Mosher and R.M. Leahy, Source localization using recursively
+applied and projected (RAP) MUSIC, IEEE Trans. Signal Processing, vol. 47,
+no. 2, pp. 332-340, Feb. 1999
+DOI=10.1109/78.740118
+http://dx.doi.org/10.1109/78.740118
+
+J.C. Mosher and R.M. Leahy, EEG and MEG source localization using
+recursively applied (RAP) MUSIC, Signals, Systems and Computers, 1996.
+pp. 1201-1207, vol.2, 3-6 Nov. 1996
+doi: 10.1109/ACSSC.1996.599135
+http://dx.doi.org/10.1109/ACSSC.1996.599135
+
 """
 
 # Author: Yousra Bekhti <yousra.bekhti@gmail.com>
+#         Daniel Strohmeier <daniel.strohmeier@tu-ilmenau.de>
 #
 # License: BSD (3-clause)
 
@@ -21,7 +30,9 @@ import mne
 
 from mne.datasets import sample
 from mne.beamformer import rap_music
-from mne.viz import plot_dipole_locations, plot_dipole_amplitudes
+from mne.viz import (plot_dipole_locations, plot_dipole_amplitudes,
+                     plot_sparse_source_estimates)
+
 
 print(__doc__)
 
@@ -46,8 +57,14 @@ forward = mne.read_forward_solution(fwd_fname, surf_ori=True,
 # Read noise covariance matrix
 noise_cov = mne.read_cov(cov_fname)
 
-dipoles, residual = rap_music(evoked, forward, noise_cov, n_dipoles=2,
-                              return_residual=True, verbose=True)
+stc, dipoles, residual = rap_music(
+    evoked, forward, noise_cov, n_dipoles=10, return_residual=True,
+    picks=None, noise_variance=1.0, corr_threshold=0.80,
+    use_2dip=False, verbose=None)
+
+plot_sparse_source_estimates(forward['src'], stc, bgcolor=(1, 1, 1),
+                             high_resolution=True, opacity=0.1)
+
 trans = forward['mri_head_t']
 plot_dipole_locations(dipoles, trans, 'sample', subjects_dir=subjects_dir)
 plot_dipole_amplitudes(dipoles)

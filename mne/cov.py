@@ -15,27 +15,28 @@ from distutils.version import LooseVersion
 import numpy as np
 from scipy import linalg
 
-from .io.write import start_file, end_file
-from .io.proj import (make_projector, _proj_equal, activate_proj,
-                      _has_eeg_average_ref_proj)
-from .io import fiff_open
-from .io.pick import (pick_types, channel_indices_by_type, pick_channels_cov,
-                      pick_channels, pick_info, _picks_by_type)
+from mne.io.write import start_file, end_file
+from mne.io.proj import (make_projector, _proj_equal, activate_proj,
+                         _has_eeg_average_ref_proj)
+from mne.io import fiff_open
+from mne.io.pick import (pick_types, channel_indices_by_type,
+                         pick_channels_cov, pick_channels, pick_info,
+                         _picks_by_type)
 
-from .io.constants import FIFF
-from .io.meas_info import read_bad_channels
-from .io.proj import _read_proj, _write_proj
-from .io.tag import find_tag
-from .io.tree import dir_tree_find
-from .io.write import (start_block, end_block, write_int, write_name_list,
-                       write_double, write_float_matrix, write_string)
-from .defaults import _handle_default
-from .epochs import _is_good
-from .utils import (check_fname, logger, verbose, estimate_rank,
-                    _compute_row_norms, check_version, _time_mask)
+from mne.io.constants import FIFF
+from mne.io.meas_info import read_bad_channels
+from mne.io.proj import _read_proj, _write_proj
+from mne.io.tag import find_tag
+from mne.io.tree import dir_tree_find
+from mne.io.write import (start_block, end_block, write_int, write_name_list,
+                          write_double, write_float_matrix, write_string)
+from mne.defaults import _handle_default
+from mne.epochs import _is_good
+from mne.utils import (check_fname, logger, verbose, estimate_rank,
+                       _compute_row_norms, check_version, _time_mask)
 
-from .externals.six.moves import zip
-from .externals.six import string_types
+from mne.externals.six.moves import zip
+from mne.externals.six import string_types
 
 
 def _check_covs_algebra(cov1, cov2):
@@ -1444,9 +1445,8 @@ def _regularized_covariance(data, reg=None):
 
 
 def compute_whitener(noise_cov, info, picks=None, rank=None,
-                     scalings=None, verbose=None):
+                     scalings=None, nave=1, verbose=None):
     """Compute whitening matrix.
-
     Parameters
     ----------
     noise_cov : Covariance
@@ -1464,9 +1464,10 @@ def compute_whitener(noise_cov, info, picks=None, rank=None,
     scalings : dict | None
         The rescaling method to be applied. See documentation of
         ``prepare_noise_cov`` for details.
+    nave : int
+        The number of averages that the data has lived.
     verbose : bool, str, int, or None
         If not None, override default verbose level (see mne.verbose).
-
     Returns
     -------
     W : 2d array
@@ -1480,7 +1481,10 @@ def compute_whitener(noise_cov, info, picks=None, rank=None,
 
     ch_names = [info['chs'][k]['ch_name'] for k in picks]
 
-    noise_cov = cp.deepcopy(noise_cov)
+    noise_cov = noise_cov.copy()
+
+    noise_cov["data"] /= nave
+
     noise_cov = prepare_noise_cov(noise_cov, info, ch_names,
                                   rank=rank, scalings=scalings)
     n_chan = len(ch_names)
