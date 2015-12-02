@@ -60,7 +60,7 @@ noise_cov = mne.read_cov(cov_fname)
 stc, dipoles, residual = rap_music(
     evoked, forward, noise_cov, n_dipoles=10, return_residual=True,
     picks=None, noise_variance=1.0, corr_threshold=0.80,
-    use_2dip=False, verbose=None)
+    use_2dip=True, verbose=None)
 
 plot_sparse_source_estimates(forward['src'], stc, bgcolor=(1, 1, 1),
                              high_resolution=True, opacity=0.1)

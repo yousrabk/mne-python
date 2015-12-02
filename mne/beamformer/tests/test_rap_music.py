@@ -12,9 +12,8 @@ from nose.tools import assert_true
 
 import mne
 from mne.datasets import testing
+from mne.beamformer import rap_music
 from mne.utils import run_tests_if_main
-
-from _rap_music_2dip_recurs import rap_music
 
 
 data_path = testing.data_path(download=False)

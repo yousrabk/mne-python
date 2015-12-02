@@ -449,7 +449,7 @@ def rap_music(evoked, forward, noise_cov, n_dipoles=3, return_residual=False,
     (sol_final, source_idx_final, oris_final, active_set, explained_data,
         max_corr) = _apply_rap_music(
         data, G, n_orient, n_dipoles=n_dipoles, noise_variance=noise_variance,
-        corr_threshold=corr_threshold)
+        corr_threshold=corr_threshold, use_2dip=use_2dip)
 
     if sol_final is not None:
         poss_final = np.empty_like(oris_final)
