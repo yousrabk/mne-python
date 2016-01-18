@@ -604,46 +604,6 @@ def iterative_mixed_norm_solver(M, G, alpha, n_mxne_iter, maxit=3000,
 ###############################################################################
 # TF-MxNE
 
-@verbose
-def tf_lipschitz_constant(M, G, phi, phiT, tol=1e-3, verbose=None):
-    """Compute lipschitz constant for FISTA
-
-    It uses a power iteration method.
-    """
-    n_times = M.shape[1]
-    n_points = G.shape[1]
-    iv = np.ones((n_points, n_times), dtype=np.float)
-    v = phi(iv)
-    L = 1e100
-    for it in range(100):
-        L_old = L
-        logger.info('Lipschitz estimation: iteration = %d' % it)
-        iv = np.real(phiT(v))
-        Gv = np.dot(G, iv)
-        GtGv = np.dot(G.T, Gv)
-        w = phi(GtGv)
-        L = np.max(np.abs(w))  # l_inf norm
-        v = w / L
-        if abs((L - L_old) / L_old) < tol:
-            break
-    return L
-
-
-def safe_max_abs(A, ia):
-    """Compute np.max(np.abs(A[ia])) possible with empty A"""
-    if np.sum(ia):  # ia is not empty
-        return np.max(np.abs(A[ia]))
-    else:
-        return 0.
-
-
-def safe_max_abs_diff(A, ia, B, ib):
-    """Compute np.max(np.abs(A)) possible with empty A"""
-    A = A[ia] if np.sum(ia) else 0.0
-    B = B[ib] if np.sum(ia) else 0.0
-    return np.max(np.abs(A - B))
-
-
 class _Phi(object):
     """Util class to have phi stft as callable without using
     a lambda that does not pickle"""
@@ -653,8 +613,16 @@ class _Phi(object):
         self.n_coefs = n_coefs
 
     def __call__(self, x):
-        return stft(x, self.wsize, self.tstep,
-                    verbose=False).reshape(-1, self.n_coefs)
+        n_coefs = self.n_coefs
+        phi = np.zeros((x.shape[0], max(n_coefs) * len(self.wsize)))
+        for i_win in range(len(self.wsize)):
+            idx = slice(i_win * max(n_coefs),
+                        i_win * max(n_coefs) + n_coefs[i_win])
+            phi[:, idx] = stft(
+                x, self.wsize[i_win], self.tstep[i_win],
+                verbose=False).reshape(-1, n_coefs[i_win]) \
+                / np.sqrt(len(self.wsize))
+        return phi
 
 
 class _PhiT(object):
@@ -667,38 +635,97 @@ class _PhiT(object):
         self.n_times = n_times
 
     def __call__(self, z):
-        return istft(z.reshape(-1, self.n_freq, self.n_step), self.tstep,
-                     self.n_times)
+        n_coefs = self.n_step * self.n_freq
+        phiT = np.zeros((z.shape[0], self.n_times))
+        for i_win in range(len(self.tstep)):
+            idx = slice(i_win * max(n_coefs),
+                        i_win * max(n_coefs) + n_coefs[i_win])
+            phiT += istft(z[:, idx].reshape(-1, self.n_freq[i_win],
+                                            self.n_step[i_win]),
+                          self.tstep[i_win], self.n_times)
+        return phiT
+# class _Phi(object):
+#     """Util class to have phi stft as callable without using
+#     a lambda that does not pickle"""
+#     def __init__(self, wsize, tstep, n_coefs):
+#         self.wsize = wsize
+#         self.tstep = tstep
+#         self.n_coefs = n_coefs
+
+#     def __call__(self, x):
+#         return np.hstack([stft(x, self.wsize[i], self.tstep[i],
+#             verbose=False).reshape(-1, self.n_coefs[i])
+#             for i in range(len(self.n_coefs))]) / np.sqrt(len(self.n_coefs))
 
 
-def norm_l21_tf(Z, shape, n_orient):
+# class _PhiT(object):
+#     """Util class to have phi.T istft as callable without using
+#     a lambda that does not pickle"""
+#     def __init__(self, tstep, n_freq, n_step, n_times):
+#         self.tstep = tstep
+#         self.n_freq = n_freq
+#         self.n_step = n_step
+#         self.n_times = n_times
+
+#     def __call__(self, z):
+#         x_out = np.zeros((z.shape[0], self.n_times))
+#         n_coefs = self.n_freq * self.n_step
+#         if len(n_coefs) > 1:
+#             z_ = np.array_split(z, np.cumsum(n_coefs)[:-1], axis=1)
+#         else:
+#             z_ = [z]
+#         for i in range(len(z_)):
+#             x_out += istft(z_[i].reshape(-1, self.n_freq[i], self.n_step[i]),
+#                            self.tstep[i], self.n_times)
+#         return x_out / np.sqrt(len(n_coefs))
+
+
+def norm_l21_tf_list(Z, shape, n_orient):
     if Z.shape[0]:
-        Z2 = Z.reshape(*shape)
-        l21_norm = np.sqrt(stft_norm2(Z2).reshape(-1, n_orient).sum(axis=1))
+        # Z2 = Z.reshape(*shape)
+        # l21_norm = np.sqrt(stft_norm2(Z2).reshape(-1, n_orient).sum(axis=1))
+        l21_norm = np.sqrt(
+            stft_norm2_list(Z, shape).reshape(-1, n_orient).sum(axis=1))
         l21_norm = l21_norm.sum()
     else:
         l21_norm = 0.
     return l21_norm
 
 
-def norm_l1_tf(Z, shape, n_orient):
-    if Z.shape[0]:
-        n_positions = Z.shape[0] // n_orient
-        Z_ = np.sqrt(np.sum((np.abs(Z) ** 2.).reshape((n_orient, -1),
-                     order='F'), axis=0))
-        Z_ = Z_.reshape((n_positions, -1), order='F').reshape(*shape)
-        l1_norm = (2. * Z_.sum(axis=2).sum(axis=1) - np.sum(Z_[:, 0, :],
-                   axis=1) - np.sum(Z_[:, -1, :], axis=1))
-        l1_norm = l1_norm.sum()
-    else:
-        l1_norm = 0.
-    return l1_norm
+def stft_norm2_list(Y, shape):
+    norm = 0
+    n_coefs = np.array(shape)[:, 1] * np.array(shape)[:, 2]
+    for i_win in range(len(n_coefs)):
+        idx = slice(i_win * max(n_coefs),
+                    i_win * max(n_coefs) + n_coefs[i_win])
+        norm += stft_norm2(Y[:, idx].reshape(*shape[i_win]))
+    return norm
+
+
+def norm_l1_tf_list(Z, shape, n_positions):
+    norm = 0
+    n_coefs = np.array(shape)[:, 1] * np.array(shape)[:, 2]
+    for i_win in range(len(n_coefs)):
+        idx = slice(i_win * max(n_coefs),
+                    i_win * max(n_coefs) + n_coefs[i_win])
+        Z_ = Z[:, idx].reshape((n_positions, -1),
+                                order='F').reshape(shape[i_win])
+        norm += (2. * Z_.sum(axis=2).sum(axis=1) - np.sum(Z_[:, 0, :],
+                 axis=1) - np.sum(Z_[:, -1, :], axis=1))
+    return norm.sum()
+    # n_orient = 3
+    # if Z.shape[0]:
+    #     l1_norm = np.sqrt(np.sum((np.abs(Z) ** 2.).reshape((n_orient, -1),
+    #               order='F'), axis=0)).sum()
+    # else:
+    #     l1_norm = 0.
+    # return l1_norm
 
 
 @verbose
 def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
-                               lipschitz_constant, phi, phiT,
-                               wsize=64, tstep=4, n_orient=1,
+                               lipschitz_constant, phi, phiT, w_space=None,
+                               w_time=None, wsize=64, tstep=4, n_orient=1,
                                maxit=200, tol=1e-8, log_objective=True,
                                perc=None, verbose=None):
     # First make G fortran for faster access to blocks of columns
@@ -708,9 +735,11 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
     n_sources = G.shape[1]
     n_positions = n_sources // n_orient
 
-    n_step = int(ceil(n_times / float(tstep)))
+    # n_step = int(ceil(float(n_times) / tstep))
+    n_step = np.ceil(n_times / tstep.astype(float)).astype(int)
     n_freq = wsize // 2 + 1
-    shape = (-1, n_freq, n_step)
+    # shape = (-1, n_freq, n_step)
+    shape = [(-1, n_freq[ii], n_step[ii]) for ii in range(len(n_freq))]
 
     G = dict(zip(np.arange(n_positions), np.hsplit(G, n_positions)))
     R = M.copy()  # residual
@@ -720,8 +749,14 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
 
     E = []  # track cost function
 
-    alpha_time_lc = alpha_time / lipschitz_constant
-    alpha_space_lc = alpha_space / lipschitz_constant
+    if w_time is None:
+        alpha_time_lc = alpha_time / lipschitz_constant
+    else:
+        alpha_time_lc = alpha_time * w_time / lipschitz_constant[:, None]
+    if w_space is None:
+        alpha_space_lc = alpha_space / lipschitz_constant
+    else:
+        alpha_space_lc = alpha_space * w_space / lipschitz_constant
 
     converged = False
 
@@ -770,13 +805,14 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
                 else:
                     # l1
                     shrink = np.maximum(1.0 - alpha_time_lc[j] / np.maximum(
-                                        col_norm, alpha_time_lc[j]), 0.0)
+                                        col_norm, alpha_time_lc[j]), 0.0) # XXX
                     Z_j_new *= shrink[np.newaxis, :]
 
                     # l21
                     shape_init = Z_j_new.shape
-                    Z_j_new = Z_j_new.reshape(*shape)
-                    row_norm = np.sqrt(stft_norm2(Z_j_new).sum())
+                    # Z_j_new = Z_j_new.reshape(*shape)
+                    # row_norm = np.sqrt(stft_norm2(Z_j_new).sum())
+                    row_norm = np.sqrt(stft_norm2_list(Z_j_new, shape).sum())
                     if row_norm <= alpha_space_lc[j]:
                         Z[j] = 0.0
                         active_set_j[:] = False
@@ -784,16 +820,23 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
                         shrink = np.maximum(1.0 - alpha_space_lc[j] /
                                             np.maximum(row_norm,
                                             alpha_space_lc[j]), 0.0)
-                        Z_j_new *= shrink
-                        Z[j] = Z_j_new.reshape(-1, *shape_init[1:]).copy()
+                        # Z[j] = Z_j_new.reshape(-1, *shape_init[1:]).copy()
+                        Z[j] = Z_j_new.copy() * shrink
                         active_set_j[:] = True
                         R -= np.dot(G_j, phiT(Z[j]))
 
-                        if log_objective:
-                            val_norm_l21_tf += norm_l21_tf(
-                                Z[j], shape, n_orient)
-                            val_norm_l1_tf += norm_l1_tf(
-                                Z[j], shape, n_orient)
+                        if w_space is None:
+                            val_norm_l21_tf += \
+                                norm_l21_tf_list(Z[j], shape, n_orient)
+                        else:
+                            val_norm_l21_tf += w_space[j] * \
+                                norm_l21_tf_list(Z[j], shape, n_orient)
+                        if w_time is None:
+                            val_norm_l1_tf += \
+                                norm_l1_tf_list(Z[j], shape, n_orient)
+                        else:
+                            val_norm_l1_tf += norm_l1_tf_list(
+                                Z[j] * w_time[j][None, :], shape, n_orient)
 
             max_diff = np.maximum(max_diff, np.max(np.abs(Z[j] - Z0)))
 
@@ -822,8 +865,8 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
 @verbose
 def _tf_mixed_norm_solver_bcd_active_set(
         M, G, alpha_space, alpha_time, lipschitz_constant, phi, phiT,
-        Z_init=None, wsize=64, tstep=4, n_orient=1, maxit=200, tol=1e-8,
-        log_objective=True, perc=None, verbose=None):
+        Z_init=None, w_space=None, w_time=None, wsize=64, tstep=4, n_orient=1,
+        maxit=200, tol=1e-8, log_objective=True, perc=None, verbose=None):
     """Solves TF L21+L1 inverse solver with BCD and active set approach
 
     Algorithm is detailed in:
@@ -856,6 +899,7 @@ def _tf_mixed_norm_solver_bcd_active_set(
     Z_init : None | array
         The initialization of the TF coefficient matrix. If None, zeros
         will be used for all coefficients.
+    XXX
     wsize: int
         length of the STFT window in samples (must be a multiple of 4).
     tstep: int
@@ -909,35 +953,45 @@ def _tf_mixed_norm_solver_bcd_active_set(
 
     Z, active_set, E, _ = _tf_mixed_norm_solver_bcd_(
         M, G, Z, active_set, alpha_space, alpha_time, lipschitz_constant,
-        phi, phiT, wsize=wsize, tstep=tstep, n_orient=n_orient, maxit=1,
-        tol=tol, log_objective=log_objective, perc=None, verbose=verbose)
+        phi, phiT, w_space=w_space, w_time=w_time, wsize=wsize, tstep=tstep,
+        n_orient=n_orient, maxit=1, tol=tol, log_objective=log_objective,
+        perc=None, verbose=verbose)
 
     while active_set.sum():
         active = np.where(active_set)[0][::n_orient] // n_orient
         Z_init = dict(zip(range(len(active)), [Z[idx] for idx in active]))
+        if w_space is None:
+            _w_space = None
+        else:
+            _w_space = w_space[active_set[::n_orient]]
+        if w_time is None:
+            _w_time = None
+        else:
+            _w_time = w_time[active_set[::n_orient]]
+
         Z, as_, E_tmp, converged = _tf_mixed_norm_solver_bcd_(
             M, G[:, active_set], Z_init,
             np.ones(len(active) * n_orient, dtype=np.bool),
             alpha_space, alpha_time,
             lipschitz_constant[active_set[::n_orient]],
-            phi, phiT, wsize=wsize, tstep=tstep, n_orient=n_orient,
-            maxit=maxit, tol=tol, log_objective=log_objective,
-            perc=0.5, verbose=verbose)
+            phi, phiT, w_space=_w_space, w_time=_w_time, wsize=wsize,
+            tstep=tstep, n_orient=n_orient, maxit=maxit, tol=tol,
+            log_objective=log_objective, perc=0.5, verbose=verbose) # XXX
         E += E_tmp
         active = np.where(active_set)[0][::n_orient] // n_orient
         Z_init = dict.fromkeys(range(n_positions), 0.0)
-        Z_init.update(dict(zip(active, Z.values())))
-        active_set[active_set] = as_
+        Z_init.update(dict(zip(active, list(Z.values())))) # XXX
+        active_set[active_set] = as_.copy()
         active_set_0 = active_set.copy()
-        Z, active_set, E_tmp, _ = _tf_mixed_norm_solver_bcd_(
+        Z, active_set, E_tmp, converged = _tf_mixed_norm_solver_bcd_( # XXX
             M, G, Z_init, active_set, alpha_space, alpha_time,
-            lipschitz_constant, phi, phiT, wsize=wsize, tstep=tstep,
-            n_orient=n_orient, maxit=1, tol=tol, log_objective=log_objective,
-            perc=None, verbose=verbose)
+            lipschitz_constant, phi, phiT, w_space=w_space, w_time=w_time,
+            wsize=wsize, tstep=tstep, n_orient=n_orient, maxit=1, tol=tol,
+            log_objective=log_objective, perc=None, verbose=verbose)
         E += E_tmp
         if converged:
-            if np.array_equal(active_set_0, active_set):
-                break
+            # if np.array_equal(active_set_0, active_set):
+            break
 
     if active_set.sum():
         Z = np.vstack([Z_ for Z_ in list(Z.values()) if np.any(Z_)])
@@ -952,9 +1006,39 @@ def _tf_mixed_norm_solver_bcd_active_set(
     return X, Z, active_set, E
 
 
+# def alpha_max_fun(alpha_space, alpha_time, GTM):
+#     thresh = np.sign(GTM) * np.maximum(np.abs(GTM) - alpha_time, 0.0)
+#     return (stft_norm2_multidict(
+#         thresh[None, :]).sum() - (alpha_space ** 2)
+
+
+# def compute_alpha_max(G, M, phi, alpha_time, n_orient):
+#     if alpha_time:
+#         from scipy.optimize import brentq
+#         n_positions = G.shape[1] // n_orient
+#         alpha_max = 0.0
+#         for idx in xrange(n_positions):
+#             idx_start = idx * n_orient
+#             idx_end = idx_start + n_orient
+#             GTM = np.abs(phi(np.dot(G[:, idx_start:idx_end].T, M))) ** 2.
+#             GTM = np.sqrt(np.sum(GTM, axis=0))
+#             max_alpha = np.max(np.abs(GTM)) / (alpha_time / 100.) # XXX
+#             alpha_max_tmp = brentq(alpha_max_fun, 0., max_alpha,
+#                                    args=(alpha_time, GTM))
+#             if alpha_max_tmp > alpha_max:
+#                 alpha_max = alpha_max_tmp
+#     else:
+#         alpha_max = stft_norm2_multidict(phi(np.dot(G.T, M)))
+#         alpha_max = np.sqrt(alpha_max.reshape(n_positions, -1).sum(axis=1))
+#         alpha_max = np.max(alpha_max)
+
+#     return alpha_max
+
+
 @verbose
-def tf_mixed_norm_solver(M, G, alpha_space, alpha_time, wsize=64, tstep=4,
-                         n_orient=1, maxit=200, tol=1e-8, log_objective=True,
+def tf_mixed_norm_solver(M, G, alpha_space, alpha_time, w_space=None,
+                         w_time=None, wsize=64, tstep=4, n_orient=1,
+                         maxit=200, tol=1e-8, log_objective=True,
                          debias=True, verbose=None):
     """Solves TF L21+L1 inverse solver with BCD and active set approach
 
@@ -1019,8 +1103,9 @@ def tf_mixed_norm_solver(M, G, alpha_space, alpha_time, wsize=64, tstep=4,
     n_sensors, n_sources = G.shape
     n_positions = n_sources // n_orient
 
-    n_step = int(ceil(n_times / float(tstep)))
+    n_step = np.ceil(n_times / tstep.astype(float)).astype(int)
     n_freq = wsize // 2 + 1
+    shape = [(-1, n_freq[ii], n_step[ii]) for ii in range(len(n_freq))]
     n_coefs = n_step * n_freq
     phi = _Phi(wsize, tstep, n_coefs)
     phiT = _PhiT(tstep, n_freq, n_step, n_times)
@@ -1036,11 +1121,110 @@ def tf_mixed_norm_solver(M, G, alpha_space, alpha_time, wsize=64, tstep=4,
     logger.info("Using block coordinate descent and active set approach")
     X, Z, active_set, E = _tf_mixed_norm_solver_bcd_active_set(
         M, G, alpha_space, alpha_time, lc, phi, phiT, Z_init=None,
-        wsize=wsize, tstep=tstep, n_orient=n_orient, maxit=maxit, tol=tol,
-        log_objective=log_objective, verbose=None)
+        w_space=w_space, w_time=w_time, wsize=wsize, tstep=tstep,
+        n_orient=n_orient, maxit=maxit, tol=tol, log_objective=log_objective,
+        verbose=None)
 
     if np.any(active_set) and debias:
         bias = compute_bias(M, G[:, active_set], X, n_orient=n_orient)
         X *= bias[:, np.newaxis]
+
+    return X, active_set, E
+
+
+@verbose
+def iterative_tf_mixed_norm_solver(M, G, alpha_space, alpha_time,
+                                   n_tfmxne_iter, wsize=64, tstep=4,
+                                   maxit=3000, tol=1e-8, n_orient=1,
+                                   debias=True, log_objective=True,
+                                   verbose=None):
+    n_sensors, n_times = M.shape
+    n_sensors, n_sources = G.shape
+    n_positions = n_sources // n_orient
+
+    n_step = np.ceil(n_times / tstep.astype(float)).astype(int)
+    n_freq = wsize // 2 + 1
+    n_coefs = (n_step * n_freq).astype(int)
+    shape = [(-1, n_freq[ii], n_step[ii]) for ii in range(len(n_freq))]
+    phi = _Phi(wsize, tstep, n_coefs)
+    phiT = _PhiT(tstep, n_freq, n_step, n_times)
+
+    if n_orient == 1:
+        lc = np.sum(G * G, axis=0)
+    else:
+        lc = np.empty(n_positions)
+        for j in range(n_positions):
+            G_tmp = G[:, (j * n_orient):((j + 1) * n_orient)]
+            lc[j] = linalg.norm(np.dot(G_tmp.T, G_tmp), ord=2)
+
+    if n_tfmxne_iter < 1:
+        raise Exception('TF-MxNE has to be computed at least 1 time.')
+
+    # lp-norm
+    g_space = lambda w: np.sqrt(np.sqrt(stft_norm2_list(w, shape).reshape(
+        -1, n_orient).sum(axis=1)))
+    g_space_prime = lambda w: 2. * np.sqrt(np.sqrt(stft_norm2_list(
+        w, shape).reshape(-1, n_orient).sum(axis=1)))
+
+    g_time = lambda w: np.sqrt(np.sqrt(np.sum((np.abs(w) ** 2.).reshape(
+        (n_orient, -1), order='F'), axis=0)).reshape((-1, w.shape[1]),
+        order='F'))
+    g_time_prime = lambda w: 2. * np.sqrt(np.sqrt(np.sum((np.abs(
+        w) ** 2.).reshape((n_orient, -1), order='F'), axis=0)).reshape((
+        -1, w.shape[1]), order='F'))
+
+    E = list()
+
+    active_set = np.ones(n_sources, dtype=np.bool)
+    Z = np.zeros((n_sources, n_coefs.sum()), dtype=np.complex)
+    X = np.zeros((n_sources, n_times))
+
+    for k in range(n_tfmxne_iter):
+        active_set0 = active_set.copy()
+
+        if k == 0:
+            w_space = None
+            w_time = None
+        else:
+            w_space = 1. / g_space_prime(Z.copy())
+            w_time = 1. / g_time_prime(Z.copy())
+            w_time[g_time_prime(Z.copy()) == 0.] = 1e100
+
+        X, Z, active_set_, E_ = _tf_mixed_norm_solver_bcd_active_set(
+            M, G[:, active_set], alpha_space, alpha_time,
+            lc[active_set[::n_orient]], phi, phiT, Z_init=Z, w_space=w_space,
+            w_time=w_time, wsize=wsize, tstep=tstep, n_orient=n_orient,
+            maxit=maxit, tol=tol, log_objective=log_objective, verbose=0)
+
+        active_set[active_set] = active_set_.copy()
+
+        if active_set.sum() > 0:
+            _norm_l21_tf = np.sum(g_space(Z.copy()))
+            _norm_l1_tf = np.sum(g_time(Z.copy()))
+            p_obj = (0.5 * linalg.norm(M - np.dot(G[:, active_set],  X),
+                     'fro') ** 2. + alpha_space * _norm_l21_tf +
+                     alpha_time * _norm_l1_tf)
+            E.append(p_obj)
+            logger.info('Iteration %d: as_size=%d, E=%f' % (
+                        k + 1, active_set.sum() / n_orient, p_obj))
+
+            # Check convergence
+            if k > 0:
+                if np.array_equal(active_set0, active_set):
+                    max_diff = np.max(np.abs(E[-2] - E[-1]) / E[-2])
+                    if (max_diff < tol):
+                        logger.info('irTFMxNE: Convergence reached')
+                        break
+        else:
+            p_obj = 0.5 * linalg.norm(M) ** 2.
+            E.append(p_obj)
+            logger.info('Iteration %d: as_size=%d, E=%f' % (
+                        k + 1, active_set.sum() / n_orient, p_obj))
+            break
+
+    if (active_set.sum() > 0) and debias:
+        bias = compute_bias(M, G[:, active_set], X, n_orient=n_orient)
+        X *= bias[:, np.newaxis]
+        Z *= bias[:, np.newaxis]
 
     return X, active_set, E
