@@ -178,7 +178,7 @@ def dgap_l21(M, G, X, active_set, alpha, n_orient):
 
 @verbose
 def _mixed_norm_solver_prox(M, G, alpha, lipschitz_constant, maxit=200,
-                            tol=1e-8, verbose=None, init=None, n_orient=1):
+                            tol=1e-8, verbose=True, init=None, n_orient=1):
     """Solves L21 inverse problem with proximal iterations and FISTA"""
     n_sensors, n_times = M.shape
     n_sensors, n_sources = G.shape
@@ -207,34 +207,46 @@ def _mixed_norm_solver_prox(M, G, alpha, lipschitz_constant, maxit=200,
 
     active_set = np.ones(n_sources, dtype=np.bool)  # start with full AS
 
-    for i in range(maxit):
-        X0, active_set_0 = X, active_set  # store previous values
-        if gram is None:
-            Y += np.dot(G.T, R) / lipschitz_constant  # ISTA step
-        else:
-            Y += R / lipschitz_constant  # ISTA step
-        X, active_set = prox_l21(Y, alpha / lipschitz_constant, n_orient)
+    for i_iter in range(10):
+        for i in range(maxit):
+            # print("alpha at iter %d: %f" % (i, alpha))
+            X0, active_set_0 = X, active_set  # store previous values
+            if gram is None:
+                Y += np.dot(G.T, R) / lipschitz_constant  # ISTA step
+            else:
+                Y += R / lipschitz_constant  # ISTA step
+            X, active_set = prox_l21(Y, alpha / lipschitz_constant, n_orient)
 
-        t0 = t
-        t = 0.5 * (1.0 + sqrt(1.0 + 4.0 * t ** 2))
-        Y.fill(0.0)
-        dt = ((t0 - 1.0) / t)
-        Y[active_set] = (1.0 + dt) * X
-        Y[active_set_0] -= dt * X0
-        Y_as = active_set_0 | active_set
+            t0 = t
+            t = 0.5 * (1.0 + sqrt(1.0 + 4.0 * t ** 2))
+            Y.fill(0.0)
+            dt = ((t0 - 1.0) / t)
+            Y[active_set] = (1.0 + dt) * X
+            Y[active_set_0] -= dt * X0
+            Y_as = active_set_0 | active_set
 
-        if gram is None:
-            R = M - np.dot(G[:, Y_as], Y[Y_as])
-        else:
-            R = GTM - np.dot(gram[:, Y_as], Y[Y_as])
+            if gram is None:
+                R = M - np.dot(G[:, Y_as], Y[Y_as])
+            else:
+                R = GTM - np.dot(gram[:, Y_as], Y[Y_as])
 
-        gap, pobj, dobj, _ = dgap_l21(M, G, X, active_set, alpha, n_orient)
-        E.append(pobj)
-        logger.debug("pobj : %s -- gap : %s" % (pobj, gap))
-        if gap < tol:
-            logger.debug('Convergence reached ! (gap: %s < %s)' % (gap, tol))
-            break
+            gap, pobj, dobj, _ = dgap_l21(M, G, X, active_set, alpha, n_orient)
+            E.append(pobj)
+            def g(w):
+                return np.sqrt(groups_norm2(w.copy(), n_orient))
+            print("pobj : %s -- gap : %s" % (pobj, gap))
+            
+            # logger.debug("pobj : %s -- gap : %s" % (pobj, gap))
+            if gap < tol:
+                logger.debug('Convergence reached ! (gap: %s < %s)' % (gap, tol))
+                break
+        print("alpha at iter %d: %f" % (i, alpha))
+        # 1/0
+        # alpha = 100000. / (np.sum(g(X)) + 1)
+        
     return X, active_set, E
+
+
 
 
 @verbose
@@ -284,6 +296,11 @@ def _mixed_norm_solver_bcd(M, G, alpha, lipschitz_constant, maxit=200,
 
     active_set = np.zeros(n_sources, dtype=np.bool)  # start with full AS
 
+    def g(w):
+        return np.sqrt(groups_norm2(w.copy(), n_orient))
+    # alpha = 65. / (np.sum(g(X)) + 1)
+    # 1/0.
+
     alpha_lc = alpha / lipschitz_constant
 
     for i in range(maxit):
@@ -311,12 +328,18 @@ def _mixed_norm_solver_bcd(M, G, alpha, lipschitz_constant, maxit=200,
                 X_j[:] = X_j_new
                 active_set[idx] = True
 
+        # alpha = 64. / (g(X).sum() + 1)
+        # 1/0
+        print("alpha at iter %d: %f" % (i, alpha))
+        alpha_lc = alpha / lipschitz_constant
+
         gap, pobj, dobj, _ = dgap_l21(M, G, X[active_set], active_set, alpha,
                                       n_orient)
         E.append(pobj)
         logger.debug("Iteration %d :: pobj %f :: dgap %f :: n_active %d" % (
                      i + 1, pobj, gap, np.sum(active_set) / n_orient))
 
+        # 1/0
         if gap < tol:
             logger.debug('Convergence reached ! (gap: %s < %s)' % (gap, tol))
             break
