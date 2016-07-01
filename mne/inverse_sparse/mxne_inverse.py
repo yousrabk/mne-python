@@ -17,7 +17,8 @@ from ..utils import logger, verbose
 from ..externals.six.moves import xrange as range
 
 from .mxne_optim import (mixed_norm_solver, iterative_mixed_norm_solver,
-                         norm_l2inf, tf_mixed_norm_solver)
+                         norm_l2inf, tf_mixed_norm_solver,
+                         mixed_norm_solver_hyperparam)
 
 
 @verbose
@@ -165,7 +166,7 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
                maxit=3000, tol=1e-4, active_set_size=10, pca=True,
                debias=True, time_pca=True, weights=None, weights_min=None,
                solver='auto', n_mxne_iter=1, return_residual=False,
-               verbose=None):
+               update_alpha=False, verbose=None):
     """Mixed-norm estimate (MxNE) and iterative reweighted MxNE (irMxNE)
 
     Compute L1/L2 mixed-norm solution or L0.5/L2 mixed-norm solution
@@ -289,6 +290,8 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
     alpha_max *= 0.01
     gain /= alpha_max
     source_weighting /= alpha_max
+    if update_alpha:
+        alpha = alpha[:gain.shape[1]]
 
     if n_mxne_iter == 1:
         X, active_set, E = mixed_norm_solver(
@@ -296,7 +299,11 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
             active_set_size=active_set_size, n_orient=n_dip_per_pos,
             debias=debias, solver=solver, verbose=verbose)
     else:
-        X, active_set, E = iterative_mixed_norm_solver(
+        if update_alpha:
+            iterative_solver = mixed_norm_solver_hyperparam
+        else:
+            iterative_solver = iterative_mixed_norm_solver
+        X, active_set, E, alphas = iterative_solver(
             M, gain, alpha, n_mxne_iter, maxit=maxit, tol=tol,
             n_orient=n_dip_per_pos, active_set_size=active_set_size,
             debias=debias, solver=solver, verbose=verbose)
@@ -344,7 +351,7 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
     if return_residual:
         out = out, residual
 
-    return out
+    return out, alpha
 
 
 def _window_evoked(evoked, size):

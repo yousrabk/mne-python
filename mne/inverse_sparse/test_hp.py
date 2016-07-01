@@ -1,28 +1,3 @@
-"""
-================================================================
-Compute sparse inverse solution with mixed norm: MxNE and irMxNE
-================================================================
-
-Runs (ir)MxNE (L1/L2 or L0.5/L2 mixed norm) inverse solver.
-L0.5/L2 is done with irMxNE which allows for sparser
-source estimates with less amplitude bias due to the non-convexity
-of the L0.5/L2 mixed norm penalty.
-
-See
-Gramfort A., Kowalski M. and Hamalainen, M,
-Mixed-norm estimates for the M/EEG inverse problem using accelerated
-gradient methods, Physics in Medicine and Biology, 2012
-http://dx.doi.org/10.1088/0031-9155/57/7/1937
-
-Strohmeier D., Haueisen J., and Gramfort A.:
-Improved MEG/EEG source localization with reweighted mixed-norms,
-4th International Workshop on Pattern Recognition in Neuroimaging,
-Tuebingen, 2014
-DOI: 10.1109/PRNI.2014.6858545
-"""
-# Author: Alexandre Gramfort <alexandre.gramfort@telecom-paristech.fr>
-#
-# License: BSD (3-clause)
 
 import mne
 from mne.datasets import sample
@@ -30,7 +5,7 @@ from mne.inverse_sparse import mixed_norm
 from mne.minimum_norm import make_inverse_operator, apply_inverse
 from mne.viz import plot_sparse_source_estimates
 
-print(__doc__)
+import numpy as np
 
 data_path = sample.data_path()
 fwd_fname = data_path + '/MEG/sample/sample_audvis-meg-eeg-oct-6-fwd.fif'
@@ -47,14 +22,14 @@ evoked.crop(tmin=0, tmax=0.3)
 # Handling forward solution
 forward = mne.read_forward_solution(fwd_fname, surf_ori=True)
 
-ylim = dict(eeg=[-10, 10], grad=[-400, 400], mag=[-600, 600])
-evoked.plot(ylim=ylim, proj=True)
+# ylim = dict(eeg=[-10, 10], grad=[-400, 400], mag=[-600, 600])
+# evoked.plot(ylim=ylim, proj=True)
 
 ###############################################################################
 # Run solver
-alpha = 50  # regularization parameter between 0 and 100 (100 is high)
+alpha = 10. * np.ones((forward['sol']['data'].shape[1],))
 loose, depth = 0.2, 0.9  # loose orientation & depth weighting
-n_mxne_iter = 1  # if > 1 use L0.5/L2 reweighted mixed norm solver
+n_mxne_iter = 10  # if > 1 use L0.5/L2 reweighted mixed norm solver
 # if n_mxne_iter > 1 dSPM weighting can be avoided.
 
 # Compute dSPM solution to be used as weights in MxNE
@@ -64,14 +39,12 @@ stc_dspm = apply_inverse(evoked, inverse_operator, lambda2=1. / 9.,
                          method='dSPM')
 
 # Compute (ir)MxNE inverse solution
-out = mixed_norm(evoked, forward, cov, alpha, loose=loose,
-                 depth=depth, maxit=3000, tol=1e-4,
-                 active_set_size=10, debias=True,
-                 weights=stc_dspm, weights_min=8.,
-                 n_mxne_iter=n_mxne_iter,
-                 return_residual=True, update_alpha=False)
-(stc, residual), alpha = out
-residual.plot(ylim=ylim, proj=True)
+out = mixed_norm(evoked, forward, cov, alpha, loose=loose, depth=depth,
+                 maxit=3000, tol=1e-4, active_set_size=10, debias=True,
+                 weights=stc_dspm, weights_min=8., n_mxne_iter=n_mxne_iter,
+                 return_residual=True, update_alpha=True)
+# residual.plot(ylim=ylim, proj=True)
+(stc, residual), alphas = out
 
 ###############################################################################
 # View in 2D and 3D ("glass" brain like 3D plot)
