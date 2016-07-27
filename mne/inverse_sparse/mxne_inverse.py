@@ -18,7 +18,8 @@ from ..externals.six.moves import xrange as range
 
 from .mxne_optim import (mixed_norm_solver, iterative_mixed_norm_solver,
                          norm_l2inf, tf_mixed_norm_solver,
-                         mixed_norm_solver_hyperparam)
+                         mixed_norm_solver_hyperparam,
+                         iterative_mixed_norm_solver_hyperparam)
 
 
 @verbose
@@ -290,7 +291,7 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
     alpha_max *= 0.01
     gain /= alpha_max
     source_weighting /= alpha_max
-    if update_alpha:
+    if np.shape(alpha):
         alpha = alpha[:gain.shape[1]]
 
     if n_mxne_iter == 1:
@@ -300,7 +301,7 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
             debias=debias, solver=solver, verbose=verbose)
     else:
         if update_alpha:
-            iterative_solver = mixed_norm_solver_hyperparam
+            iterative_solver = iterative_mixed_norm_solver_hyperparam
         else:
             iterative_solver = iterative_mixed_norm_solver
         X, active_set, E, alphas = iterative_solver(
@@ -350,8 +351,9 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
 
     if return_residual:
         out = out, residual
-
-    return out, alpha
+    if not update_alpha or n_mxne_iter == 1:
+        alphas = alpha
+    return out, alphas
 
 
 def _window_evoked(evoked, size):

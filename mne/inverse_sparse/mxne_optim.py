@@ -239,7 +239,8 @@ def _mixed_norm_solver_prox(M, G, alpha, lipschitz_constant, maxit=200,
 
 @verbose
 def _mixed_norm_solver_cd(M, G, alpha, lipschitz_constant, maxit=10000,
-                          tol=1e-8, verbose=None, init=None, n_orient=1):
+                          tol=1e-8, verbose=None, init=None, n_orient=1,
+                          update_alpha=None):
     """Solves L21 inverse problem with coordinate descent"""
     from sklearn.linear_model.coordinate_descent import MultiTaskLasso
 
@@ -313,10 +314,9 @@ def _mixed_norm_solver_bcd(M, G, alpha, lipschitz_constant, maxit=200,
                 active_set[idx] = True
 
         alpha_tmp = (np.tile(alpha, [n_orient, 1]).ravel(order='F')
-                     if update_alpha else alpha)
+                     if np.shape(alpha) else alpha)
         X_tilde, G_tilde, alpha_tilde = _weights(X[active_set], G, alpha_tmp,
-                                                 active_set, update_alpha,
-                                                 n_orient)
+                                                 active_set, n_orient)
         gap, pobj, dobj, R = dgap_l21(M, G_tilde, X_tilde, active_set,
                                       alpha_tilde, n_orient)
         E.append(pobj)
@@ -446,7 +446,7 @@ def mixed_norm_solver(M, G, alpha, maxit=3000, tol=1e-8, verbose=None,
             else:
                 lc_tmp = 1.01 * linalg.norm(G[:, active_set], ord=2) ** 2
 
-            alpha_tmp = (alpha[active_set][::n_orient] if update_alpha
+            alpha_tmp = (alpha[active_set][::n_orient] if np.shape(alpha)
                          else alpha)
 
             X, as_, _ = l21_solver(M, G[:, active_set], alpha_tmp, lc_tmp,
@@ -457,7 +457,7 @@ def mixed_norm_solver(M, G, alpha, maxit=3000, tol=1e-8, verbose=None,
             idx_old_active_set = np.where(active_set)[0]
 
             X_tilde, G_tilde, alpha_tilde = _weights(X, G, alpha, active_set,
-                                                     update_alpha, n_orient)
+                                                     n_orient)
             gap, pobj, dobj, R = dgap_l21(M, G_tilde, X_tilde, active_set,
                                           alpha_tilde, n_orient)
             E.append(pobj)
@@ -488,7 +488,7 @@ def mixed_norm_solver(M, G, alpha, maxit=3000, tol=1e-8, verbose=None,
         else:
             warn('Did NOT converge ! (gap: %s > %s)' % (gap, tol))
     else:
-        alpha_tmp = alpha[::n_orient] if update_alpha else alpha
+        alpha_tmp = alpha[::n_orient] if np.shape(alpha) else alpha
         X, active_set, E = l21_solver(M, G, alpha_tmp, lc, maxit=maxit,
                                       tol=tol, n_orient=n_orient, init=None,
                                       update_alpha=update_alpha)
@@ -615,8 +615,8 @@ def iterative_mixed_norm_solver(M, G, alpha, n_mxne_iter, maxit=3000,
     return X, active_set, E, alpha
 
 
-def _weights(X, G, alpha, active_set, update_alpha, n_orient):
-    if update_alpha:
+def _weights(X, G, alpha, active_set, n_orient):
+    if np.shape(alpha):
         # alpha = np.tile(alpha, [n_orient, 1]).ravel(order='F')
         G_tilde = np.dot(G, np.diag(1. / alpha))
         alpha_tilde = 1.
@@ -644,12 +644,21 @@ def mixed_norm_solver_hyperparam(M, G, alpha, hp_iter, maxit=3000,
 
     active_set = np.ones(G.shape[1], dtype=np.bool)
     X = np.zeros((G.shape[1], M.shape[1]))
+    alphas = []
+    alphas.append(alpha)
 
     for k in range(hp_iter):
+        active_set = np.ones(G.shape[1], dtype=np.bool)
+        X = np.zeros((G.shape[1], M.shape[1]))
+
         X0 = X.copy()
         active_set_0 = active_set.copy()
         G_tmp = G[:, active_set]
-        alpha_tmp = alpha[active_set]
+
+        if np.shape(alpha):
+            alpha_tmp = alpha[active_set]
+        else:
+            alpha_tmp = alpha
 
         if active_set_size is not None:
             if np.sum(active_set) > (active_set_size * n_orient):
@@ -675,7 +684,6 @@ def mixed_norm_solver_hyperparam(M, G, alpha, hp_iter, maxit=3000,
 
             X_tilde, G_tilde, alpha_tilde = _weights(X, G, alpha,
                                                      active_set,
-                                                     update_alpha=True,
                                                      n_orient=n_orient)
             p_obj = 0.5 * linalg.norm(M - np.dot(G_tilde[:, active_set],
                                                  X_tilde),
@@ -685,7 +693,7 @@ def mixed_norm_solver_hyperparam(M, G, alpha, hp_iter, maxit=3000,
             # Check convergence
             if ((k >= 1) and np.all(active_set == active_set_0) and
                     np.all(np.abs(X - X0) < tol)):
-                print('Convergence reached after %d reweightings!' % k)
+                logger.info('Convergence reached after %d reweightings!' % k)
                 break
         else:
             active_set = np.zeros_like(active_set)
@@ -699,12 +707,120 @@ def mixed_norm_solver_hyperparam(M, G, alpha, hp_iter, maxit=3000,
             alpha[active_set] = (62. + a) / (gX + b)
         else:
             alpha = (62. + a) / (np.sum(g(X)) + b)
+        alphas.append(alpha)
+
+        if abs(alphas[-2] - alphas[-1]) < 1e-2:
+            logger.info('Hyperparameter estimated: Convergence reached after %d iterations!' % k)
+            break
 
     if np.any(active_set) and debias:
         bias = compute_bias(M, G[:, active_set], X, n_orient=n_orient)
         X *= bias[:, np.newaxis]
 
-    return X, active_set, E, alpha[active_set]
+    return X, active_set, E, alphas
+
+
+def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
+                                           maxit=3000, tol=1e-8, verbose=None,
+                                           active_set_size=50, debias=True,
+                                           n_orient=1, solver='auto',
+                                           a=1., b=1., update_alpha=True):
+    def g(w):
+        return np.sqrt(np.sqrt(groups_norm2(w.copy(), n_orient)))
+
+    def gprime(w):
+        return 2. * np.repeat(g(w), n_orient).ravel()
+
+    k = 1 if n_mxne_iter == 1 else 0.5
+
+    # Compute the parameter a of the Gamma distribution
+    alpha_max = norm_l2inf(np.dot(G.T, M), n_orient, copy=False)
+
+    mode = alpha_max / 2.5
+    a = mode * b + 1.
+    alpha_max_0 = alpha_max
+
+    E = list()
+
+    # active_set = np.ones(G.shape[1], dtype=np.bool)
+    # weights = np.ones(G.shape[1])
+    # X = np.zeros((G.shape[1], M.shape[1]))
+
+    alphas = []
+    alphas.append(alpha)
+
+    for i_hp in range(hp_iter):
+        active_set = np.ones(G.shape[1], dtype=np.bool)
+        weights = np.ones(G.shape[1])
+        X = np.zeros((G.shape[1], M.shape[1]))
+        for i_iter in range(n_mxne_iter):
+            X0 = X.copy()
+            active_set_0 = active_set.copy()
+            G_tmp = G[:, active_set] * weights[np.newaxis, :]
+
+            if active_set_size is not None:
+                if np.sum(active_set) > (active_set_size * n_orient):
+                    X, _active_set, _ = mixed_norm_solver(
+                        M, G_tmp, alpha, debias=False, n_orient=n_orient,
+                        maxit=maxit, tol=tol, active_set_size=active_set_size,
+                        solver=solver, verbose=verbose)
+                else:
+                    X, _active_set, _ = mixed_norm_solver(
+                        M, G_tmp, alpha, debias=False, n_orient=n_orient,
+                        maxit=maxit, tol=tol, active_set_size=None, solver=solver,
+                        verbose=verbose)
+            else:
+                X, _active_set, _ = mixed_norm_solver(
+                    M, G_tmp, alpha, debias=False, n_orient=n_orient,
+                    maxit=maxit, tol=tol, active_set_size=None, solver=solver,
+                    verbose=verbose)
+
+            logger.info('active set size %d' % (_active_set.sum() / n_orient))
+
+            if _active_set.sum() > 0:
+                active_set[active_set] = _active_set
+
+                # Reapply weights to have correct unit
+                X *= weights[_active_set][:, np.newaxis]
+                weights = gprime(X)
+                p_obj = 0.5 * linalg.norm(M - np.dot(G[:, active_set],  X),
+                                          'fro') ** 2. + alpha * np.sum(g(X))
+                E.append(p_obj)
+
+                # Check convergence
+                if ((i_iter >= 1) and np.all(active_set == active_set_0) and
+                        np.all(np.abs(X - X0) < tol)):
+                    print('Convergence reached after %d reweightings!' % i_iter)
+                    break
+            else:
+                active_set = np.zeros_like(active_set)
+                p_obj = 0.5 * linalg.norm(M) ** 2.
+                E.append(p_obj)
+                break
+
+        # Compute the parameter a of the Gamma distribution
+        alpha_max = norm_l2inf(np.dot(G_tmp.T, M), n_orient, copy=False)
+        alpha_max *= 0.01
+        alpha_max = 1.
+
+        if np.shape(alpha):
+            gX = (g(X) if (n_orient == 1) else
+                  np.tile(g(X), [n_orient, 1]).ravel(order='F'))
+            alpha[active_set] = (64. / k + a) / (gX + b)
+        else:
+            alpha = (64. / k + a) / (np.sum(g(X / alpha_max)) + b)
+            logger.info('alpha: %s' % alpha)
+        alphas.append(alpha)
+
+        if abs(alphas[-2] - alphas[-1]) < 1e-2:
+            logger.info('Hyperparameter estimated: Convergence reached after %d iterations!' % i_hp)
+            break
+
+    if np.any(active_set) and debias:
+        bias = compute_bias(M, G[:, active_set], X, n_orient=n_orient)
+        X *= bias[:, np.newaxis]
+
+    return X, active_set, E, alphas
 
 
 ###############################################################################

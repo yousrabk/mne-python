@@ -30,7 +30,7 @@ M = np.dot(G, X)
 
 def solver_prox(M, G, alpha, lipschitz_constant, maxit=200,
                 hp_iter=5, update_alpha=False, tol=1e-8, n_orient=1,
-                a=1, b=1):
+                a=1, b=1, solver='bcd'):
     """Solve L21 inverse problem with proximal iterations and FISTA"""
     n_sensors, n_times = M.shape
     n_sensors, n_sources = G.shape
