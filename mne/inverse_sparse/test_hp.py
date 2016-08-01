@@ -33,7 +33,7 @@ elif data == 'somato':
 cov = mne.read_cov(cov_fname)
 # Handling average file
 evoked = mne.read_evokeds(ave_fname, condition=condition, baseline=(None, 0))
-evoked.crop(tmin=0., tmax=0.3)
+evoked.crop(tmin=0.04, tmax=0.18)
 
 evoked = evoked.pick_types(eeg=False, meg=True)
 # Handling forward solution
@@ -47,7 +47,7 @@ forward = mne.read_forward_solution(fwd_fname, surf_ori=True)
 loose, depth = 0.2, 0.9  # loose orientation & depth weighting
 update_alpha = True
 if update_alpha:
-    alpha = 40. #* np.ones((forward['sol']['data'].shape[1],))
+    alpha = 60. #* np.ones((forward['sol']['data'].shape[1],))
     n_mxne_iter = 10  # if > 1 use L0.5/L2 reweighted mixed norm solve
     # if n_mxne_iter > 1 dSPM weighting can be avoided.
 else:

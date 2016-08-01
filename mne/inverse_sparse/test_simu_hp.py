@@ -20,11 +20,11 @@ n_sensors, n_sources, n_times = 304, 22647, stc.data.shape[1]
 n_sensors, n_sources, n_times = 102, 300, stc.data.shape[1]
 G = rng.randn(n_sensors, n_sources)
 G /= G.std(axis=0)
-G *= 10
 # G = sio.loadmat('G_whitened.mat')['G']
 # G /= G.std(axis=0) 
+n_orient = 1
 
-X = 0.1e-2 * rng.randn(n_sources, n_times)
+X = .5e-2 * rng.randn(n_sources, n_times)
 X[0] += stc.data[0]
 X[1] += stc.data[1]
 X[2] += stc.data[2]
@@ -32,35 +32,45 @@ X[3] += stc.data[3]
 
 M = np.dot(G, X)
 
-n_orient = 3
-alpha_max = norm_l2inf(np.dot(G.T, M), n_orient)
-alpha_max *= 0.01
-# G /= alpha_max
 
 # ###########
-# G = sio.loadmat('G_whitened.mat')['G']
+scale = 1.
+n_orient = 3
+G = np.load('gain_whitened.npy')
 # alpha_max = sio.loadmat('alpha_max.mat')['alpha_max'][0][0]
 # # G *= alpha_max
-# M = sio.loadmat('M_whitened.mat')['M']
+M = np.load('M_white.npy')
+M = M[:, 40:80]
 
-alpha = 60. * alpha_max / 100.
+scale = 1.
+G *= scale
+
+alpha_max = norm_l2inf(np.dot(G.T, M), n_orient)
+alpha_max *= 0.01
+G /= alpha_max
+
+alpha_max_b = norm_l2inf(np.dot(G.T, M), n_orient)
+alpha = 0.2 * alpha_max_b
 n_mxne_iter = 10
 update_alpha = True
 
+b = 1.  # 1. / scale
+a = alpha_max_b / 2. * b + 1
 if update_alpha:
     solver = iterative_mixed_norm_solver_hyperparam
 else:
     solver = iterative_mixed_norm_solver
 
 out = solver(M, G, alpha, n_mxne_iter, maxit=3000, tol=1e-4,
-    n_orient=1)
+    n_orient=n_orient, a=a, b=b, hp_iter=3)
 
 X_est, active_set, E, alphas = out
-# X_est /= alpha_max
+X_est /= alpha_max
 
 # plt.close('all')
 # plt.plot(np.log10(E - np.min(E)))
 # plt.plot(E)
 plt.figure()
 plt.plot(X_est.T)
+# plt.plot(stc.data.T / scale, '--')
 plt.show()

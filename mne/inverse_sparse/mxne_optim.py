@@ -328,7 +328,6 @@ def _mixed_norm_solver_bcd(M, G, alpha, lipschitz_constant, maxit=200,
             break
 
     X = X[active_set]
-
     return X, active_set, E
 
 
@@ -726,25 +725,23 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
                                            n_orient=1, solver='auto',
                                            a=1., b=1., update_alpha=True):
     def g(w):
-        return np.sqrt(np.sqrt(groups_norm2(w.copy(), n_orient)))
+        if n_mxne_iter == 1:
+            return np.sqrt(groups_norm2(w.copy(), n_orient))
+        else:
+            return np.sqrt(np.sqrt(groups_norm2(w.copy(), n_orient)))
 
     def gprime(w):
         return 2. * np.repeat(g(w), n_orient).ravel()
-
+    # 1/0
     k = 1 if n_mxne_iter == 1 else 0.5
 
     # Compute the parameter a of the Gamma distribution
     alpha_max = norm_l2inf(np.dot(G.T, M), n_orient, copy=False)
-
-    mode = alpha_max / 2.5
+    # 1/0
+    mode = alpha_max / 2.
     a = mode * b + 1.
-    alpha_max_0 = alpha_max
 
     E = list()
-
-    # active_set = np.ones(G.shape[1], dtype=np.bool)
-    # weights = np.ones(G.shape[1])
-    # X = np.zeros((G.shape[1], M.shape[1]))
 
     alphas = []
     alphas.append(alpha)
@@ -799,16 +796,17 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
                 break
 
         # Compute the parameter a of the Gamma distribution
-        alpha_max = norm_l2inf(np.dot(G_tmp.T, M), n_orient, copy=False)
-        alpha_max *= 0.01
-        alpha_max = 1.
+        # alpha_max = norm_l2inf(np.dot(G_tmp.T, M), n_orient, copy=False)
+        # alpha_max *= 0.01
+        # alpha_max = 1.
 
         if np.shape(alpha):
             gX = (g(X) if (n_orient == 1) else
                   np.tile(g(X), [n_orient, 1]).ravel(order='F'))
             alpha[active_set] = (64. / k + a) / (gX + b)
         else:
-            alpha = (64. / k + a) / (np.sum(g(X / alpha_max)) + b)
+            alpha = (64. / k + a) / (np.sum(g(X)) + b)
+            # 1/0
             logger.info('alpha: %s' % alpha)
         alphas.append(alpha)
 
