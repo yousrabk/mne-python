@@ -383,11 +383,11 @@ def mixed_norm_solver(M, G, alpha, maxit=3000, tol=1e-8, verbose=None,
     logger.info("-- ALPHA MAX : %s" % alpha_max)
     # alpha = float(alpha)
 
-    has_sklearn = True
-    try:
-        from sklearn.linear_model.coordinate_descent import MultiTaskLasso  # noqa
-    except ImportError:
-        has_sklearn = False
+    has_sklearn = False
+    # try:
+    #     from sklearn.linear_model.coordinate_descent import MultiTaskLasso  # noqa
+    # except ImportError:
+    #     has_sklearn = False
 
     if solver == 'auto':
         if has_sklearn and (n_orient == 1):
@@ -744,7 +744,7 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
     E = list()
 
     alphas = []
-    alphas.append(alpha)
+    alphas.append(alpha.copy()) if np.shape(alpha) else alphas.append(alpha)
 
     for i_hp in range(hp_iter):
         active_set = np.ones(G.shape[1], dtype=np.bool)
@@ -754,21 +754,23 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
             X0 = X.copy()
             active_set_0 = active_set.copy()
             G_tmp = G[:, active_set] * weights[np.newaxis, :]
+            alpha_tmp = (alpha[active_set][::n_orient] if np.shape(alpha)
+                         else alpha)
 
             if active_set_size is not None:
                 if np.sum(active_set) > (active_set_size * n_orient):
                     X, _active_set, _ = mixed_norm_solver(
-                        M, G_tmp, alpha, debias=False, n_orient=n_orient,
+                        M, G_tmp, alpha_tmp, debias=False, n_orient=n_orient,
                         maxit=maxit, tol=tol, active_set_size=active_set_size,
                         solver=solver, verbose=verbose)
                 else:
                     X, _active_set, _ = mixed_norm_solver(
-                        M, G_tmp, alpha, debias=False, n_orient=n_orient,
+                        M, G_tmp, alpha_tmp, debias=False, n_orient=n_orient,
                         maxit=maxit, tol=tol, active_set_size=None, solver=solver,
                         verbose=verbose)
             else:
                 X, _active_set, _ = mixed_norm_solver(
-                    M, G_tmp, alpha, debias=False, n_orient=n_orient,
+                    M, G_tmp, alpha_tmp, debias=False, n_orient=n_orient,
                     maxit=maxit, tol=tol, active_set_size=None, solver=solver,
                     verbose=verbose)
 
@@ -780,8 +782,14 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
                 # Reapply weights to have correct unit
                 X *= weights[_active_set][:, np.newaxis]
                 weights = gprime(X)
-                p_obj = 0.5 * linalg.norm(M - np.dot(G[:, active_set],  X),
-                                          'fro') ** 2. + alpha * np.sum(g(X))
+                if np.shape(alpha):
+                    p_obj = \
+                        0.5 * linalg.norm(M - np.dot(G[:, active_set],  X),
+                                          'fro') ** 2. + \
+                        np.sum(alpha[active_set] * g(X))
+                else:
+                    p_obj = 0.5 * linalg.norm(M - np.dot(G[:, active_set],  X),
+                                              'fro') ** 2. + alpha * np.sum(g(X))
                 E.append(p_obj)
 
                 # Check convergence
@@ -801,16 +809,19 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
         # alpha_max = 1.
 
         if np.shape(alpha):
+            # gX = np.ones((active_set.shape)) * np.sum(g(X))
             gX = (g(X) if (n_orient == 1) else
                   np.tile(g(X), [n_orient, 1]).ravel(order='F'))
             alpha[active_set] = (64. / k + a) / (gX + b)
+            # alpha = (64. / k + a) / (gX + b)
+            # 1/0
         else:
             alpha = (64. / k + a) / (np.sum(g(X)) + b)
             # 1/0
             logger.info('alpha: %s' % alpha)
         alphas.append(alpha)
 
-        if abs(alphas[-2] - alphas[-1]) < 1e-2:
+        if abs(alphas[-2] - alphas[-1]).max() < 1e-2:
             logger.info('Hyperparameter estimated: Convergence reached after %d iterations!' % i_hp)
             break
 
@@ -818,6 +829,7 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
         bias = compute_bias(M, G[:, active_set], X, n_orient=n_orient)
         X *= bias[:, np.newaxis]
 
+    alphas = np.array(alphas)[:, :5] if np.shape(alpha) else alphas
     return X, active_set, E, alphas
 
 

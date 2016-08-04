@@ -167,7 +167,7 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
                maxit=3000, tol=1e-4, active_set_size=10, pca=True,
                debias=True, time_pca=True, weights=None, weights_min=None,
                solver='auto', n_mxne_iter=1, return_residual=False,
-               update_alpha=False, verbose=None):
+               update_alpha=False, hp_iter= 10, verbose=None):
     """Mixed-norm estimate (MxNE) and iterative reweighted MxNE (irMxNE)
 
     Compute L1/L2 mixed-norm solution or L0.5/L2 mixed-norm solution
@@ -295,10 +295,16 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
         alpha = alpha[:gain.shape[1]]
 
     if n_mxne_iter == 1:
-        X, active_set, E = mixed_norm_solver(
-            M, gain, alpha, maxit=maxit, tol=tol,
-            active_set_size=active_set_size, n_orient=n_dip_per_pos,
-            debias=debias, solver=solver, verbose=verbose)
+        if update_alpha:
+            X, active_set, E = mixed_norm_solver_hyperparam(
+                M, gain, alpha, hp_iter=hp_iter, maxit=maxit, tol=tol,
+                active_set_size=active_set_size, n_orient=n_dip_per_pos,
+                debias=debias, solver=solver, verbose=verbose)
+        else:
+            X, active_set, E = mixed_norm_solver(
+                M, gain, alpha, maxit=maxit, tol=tol,
+                active_set_size=active_set_size, n_orient=n_dip_per_pos,
+                debias=debias, solver=solver, verbose=verbose)
     else:
         if update_alpha:
             iterative_solver = iterative_mixed_norm_solver_hyperparam
