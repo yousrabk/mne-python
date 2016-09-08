@@ -296,7 +296,7 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
 
     if n_mxne_iter == 1:
         if update_alpha:
-            X, active_set, E = mixed_norm_solver_hyperparam(
+            X, active_set, E, alphas = mixed_norm_solver_hyperparam(
                 M, gain, alpha, hp_iter=hp_iter, maxit=maxit, tol=tol,
                 active_set_size=active_set_size, n_orient=n_dip_per_pos,
                 debias=debias, solver=solver, verbose=verbose)

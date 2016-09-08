@@ -291,7 +291,7 @@ def _mixed_norm_solver_bcd(M, G, alpha, lipschitz_constant, maxit=200,
     for i in range(maxit):
         for j in range(n_positions):
             idx = slice(j * n_orient, (j + 1) * n_orient)
-
+            1/0
             G_j = G[:, idx]
             X_j = X[idx]
 

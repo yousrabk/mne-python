@@ -41,7 +41,7 @@ subjects_dir = data_path + '/subjects'
 # Read noise covariance matrix
 cov = mne.read_cov(cov_fname)
 # Handling average file
-condition = 'Left Auditory'
+condition = 'Left visual'
 evoked = mne.read_evokeds(ave_fname, condition=condition, baseline=(None, 0))
 evoked.crop(tmin=0, tmax=0.3)
 # Handling forward solution
@@ -52,7 +52,7 @@ evoked.plot(ylim=ylim, proj=True)
 
 ###############################################################################
 # Run solver
-alpha = 50  # regularization parameter between 0 and 100 (100 is high)
+alpha = 40  # regularization parameter between 0 and 100 (100 is high)
 loose, depth = 0.2, 0.9  # loose orientation & depth weighting
 n_mxne_iter = 1  # if > 1 use L0.5/L2 reweighted mixed norm solver
 # if n_mxne_iter > 1 dSPM weighting can be avoided.
