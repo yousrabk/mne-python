@@ -182,24 +182,24 @@ rmse_noise = np.zeros((len(alphas_init),))
 alphas_noise = {}
 as_noise = np.zeros((len(alphas_init),))
 for i_n, al in enumerate(alphas_init):
-	alpha = al * alpha_max_b
+    alpha = al * alpha_max_b
 
-	b = 1.  # 1. / scale
-	a = alpha_max_b / 2. * b + 1
-	if update_alpha:
-	    solver = iterative_mixed_norm_solver_hyperparam
-	else:
-	    solver = iterative_mixed_norm_solver
+    b = 1.  # 1. / scale
+    a = alpha_max_b / 2. * b + 1
+    if update_alpha:
+        solver = iterative_mixed_norm_solver_hyperparam
+    else:
+        solver = iterative_mixed_norm_solver
 
-	out = solver(M, G, alpha, n_mxne_iter, maxit=3000, tol=1e-4,
-	    n_orient=n_orient, a=a, b=b, hp_iter=10)
+    out = solver(M, G, alpha, n_mxne_iter, maxit=3000, tol=1e-4,
+                 n_orient=n_orient, a=a, b=b, hp_iter=10)
 
-	X_est, active_set, E, als = out
-	X_est /= alpha_max
+    X_est, active_set, E, als = out
+    X_est /= alpha_max
 
-	rmse_noise[i_n] = np.linalg.norm(stc.data - X_est[:4])
-	alphas_noise[i_n] = als
-	as_noise[i_n] = active_set.sum()
+    rmse_noise[i_n] = np.linalg.norm(stc.data - X_est[:4])
+    alphas_noise[i_n] = als
+    as_noise[i_n] = active_set.sum()
 
 # #############################
 
@@ -246,24 +246,24 @@ rmse_inoise = np.zeros((len(alphas_init),))
 alphas_inoise = {}
 as_inoise = np.zeros((len(alphas_init),))
 for i_n, al in enumerate(alphas_init):
-	alpha = al * alpha_max_b
+    alpha = al * alpha_max_b
 
-	b = 1.  # 1. / scale
-	a = alpha_max_b / 2. * b + 1
-	if update_alpha:
-	    solver = iterative_mixed_norm_solver_hyperparam
-	else:
-	    solver = iterative_mixed_norm_solver
+    b = 1.  # 1. / scale
+    a = alpha_max_b / 2. * b + 1
+    if update_alpha:
+        solver = iterative_mixed_norm_solver_hyperparam
+    else:
+        solver = iterative_mixed_norm_solver
 
-	out = solver(M, G, alpha, n_mxne_iter, maxit=3000, tol=1e-4,
-	    n_orient=n_orient, a=a, b=b, hp_iter=10)
+    out = solver(M, G, alpha, n_mxne_iter, maxit=3000, tol=1e-4,
+                 n_orient=n_orient, a=a, b=b, hp_iter=10)
 
-	X_est, active_set, E, als = out
-	X_est /= alpha_max
+    X_est, active_set, E, als = out
+    X_est /= alpha_max
 
-	rmse_inoise[i_n] = np.linalg.norm(stc.data - X_est[:4])
-	alphas_inoise[i_n] = als
-	as_inoise[i_n] = active_set.sum()
+    rmse_inoise[i_n] = np.linalg.norm(stc.data - X_est[:4])
+    alphas_inoise[i_n] = als
+    as_inoise[i_n] = active_set.sum()
 
 
 # #############################
@@ -297,11 +297,11 @@ for i_d in range(len(alphas)):
     ax2.plot(range(len(alphas_i[i_d])), alphas_i[i_d])
     ax2.plot(range(len(alphas_inoise[i_d])), alphas_inoise[i_d], '--')
 
-# ax1.set_title(r'\|X\|_{2,1}')
-ax1.set_title('l_21')
+ax1.set_title(r'$\|X\|_{2,1}$')
+# ax1.set_title('l_21')
 ax1.set_title('(a)', loc='left')
-# ax2.set_title(r'\|X\|_{2,0.5}')
-ax2.set_title('l_2,0.5')
+ax2.set_title(r'$\|X\|_{2,0.5}$')
+# ax2.set_title('l_2,0.5')
 ax2.set_title('(b)', loc='left')
 ax1.set_xticks(range(len(alphas[i_d])))
 ax2.set_xticks(range(len(alphas[i_d])))
@@ -314,8 +314,8 @@ ax1.set_xlim([0, 5.5])
 ax1.set_xticks(np.arange(6))
 ax1.set_xlabel('number of iterations', fontsize=16)
 ax2.set_xlabel('number of iterations', fontsize=16)
-ax1.set_ylabel('initialisation of lambda', fontsize=16)
+ax1.set_ylabel(r'$\lambda$', fontsize=16)
 # # plt.legend(alphas_init * 100, bbox_to_anchor=(1., 1),
-# # 		   loc=1, borderaxespad=0., ncol=4)
+# #            loc=1, borderaxespad=0., ncol=4)
 # # plt.title(r'convergence of \lambda', fontsize=16)
 plt.show()
