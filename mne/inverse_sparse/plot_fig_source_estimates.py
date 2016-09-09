@@ -1,6 +1,7 @@
 """.
 
-Plot figure with source estimates
+ICASSP 2017
+Plot figure 2. : source estimates
 
 """
 
@@ -10,6 +11,7 @@ from mne.inverse_sparse.mxne_optim import (
     iterative_mixed_norm_solver_hyperparam, norm_l2inf,
     iterative_mixed_norm_solver)
 
+import matplotlib
 import matplotlib.pyplot as plt
 # import scipy.io as sio
 
@@ -165,16 +167,15 @@ X_est_v /= alpha_max
 
 # ################################
 
-# import matplotlib
-# matplotlib.rc('xtick', labelsize=16)
-# matplotlib.rc('ytick', labelsize=16)
-# plt.rc('text', usetex=True)
+matplotlib.rc('xtick', labelsize=16)
+matplotlib.rc('ytick', labelsize=16)
+plt.rc('text', usetex=True)
 
 # f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharey=True,
 #                                            figsize=(8, 6))
 # import  matplotlib.pyplot as plt
 fig = plt.figure(figsize=(8, 7))
-fig.subplots_adjust(left=0.1, right=0.97, wspace=0.05, hspace=0.19,
+fig.subplots_adjust(left=0.12, right=0.97, wspace=0.05, hspace=0.19,
                     bottom=0.08, top=0.88)
 X = [(2, 1, 1), (2, 2, 3), (2, 2, 4)]
 # for nrows, ncols, plot_number in X:
@@ -195,10 +196,10 @@ ax1.plot(stc.times * 1000, X_est.T, color=col, label='Esimated')
 # ax1.set_xticks([])
 ax1.set_xlim([8., 200.])
 ax1.set_ylim([-0.1, 1.])
-ax1.set_yticks(np.arange(-0.1, 1., 0.2))
+ax1.set_yticks(np.arange(0., 1.1, 0.2))
 ax1.set_ylabel('Source Amplitude', fontsize=fontsize)
 # ax1.set_title('(a)', loc='left')
-ax1.set_title(r'(a) \ell_{2,1} - one hyperparam')
+ax1.set_title(r'(a) $\ell_{2,1}$ - one hyperparam')
 # ax1.set_title('one hyperparam', loc='right')
 
 # irmxne with one hp
@@ -208,11 +209,11 @@ ax2.plot(stc.times * 1000, X_est_i.T, color=col, label='Estimated')
 # ax2.set_xticks([])
 ax2.set_xlim([8., 200.])
 ax2.set_ylim([-0.1, 1.])
-ax2.set_yticks(np.arange(-0.1, 1., 0.2))
+ax2.set_yticks(np.arange(0., 1.1, 0.2))
 ax2.set_ylabel('Source Amplitude', fontsize=fontsize)
 ax2.set_xlabel('Time (ms)', fontsize=fontsize)
 # ax2.set_title('(b)', loc='left')
-ax2.set_title(r'(b) \ell_{2,0.5} - one hyperparam')
+ax2.set_title(r'(b) $\ell_{2,0.5}$ - one hyperparam')
 # ax2.set_title('one hyperparam', loc='right')
 
 # mxne with a vector of hp
@@ -222,10 +223,10 @@ ax3.plot(stc.times * 1000, X_est_v.T, color=col, label='Estimated')
 ax3.set_xlabel('Time (ms)', fontsize=fontsize)
 ax3.set_xlim([8., 200.])
 ax3.set_ylim([-0.1, 1.])
-ax3.set_yticks(np.arange(-0.1, 1., 0.2))
+ax3.set_yticks(np.arange(0., 1.1, 0.2))
 ax3.set_yticklabels([])
 # ax3.set_title('(c)', loc='left')
-ax3.set_title(r'(c) \ell_{2,1} - hp per source')
+ax3.set_title(r'(c) $\ell_{2,1}$ - hyperparam per source')
 # ax3.set_title('hp per source', loc='right')
 
 # # irmxne with a vector of hp

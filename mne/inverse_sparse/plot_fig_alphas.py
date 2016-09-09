@@ -1,3 +1,9 @@
+""".
+
+ICASSP 2017
+Plot figure 1. : lambda convergence
+
+"""
 
 import mne
 import numpy as np
@@ -5,6 +11,7 @@ from mne.inverse_sparse.mxne_optim import (
     iterative_mixed_norm_solver_hyperparam, norm_l2inf,
     iterative_mixed_norm_solver)
 
+import matplotlib
 import matplotlib.pyplot as plt
 
 stc_fname = 'stc_mind'
@@ -265,9 +272,7 @@ for i_n, al in enumerate(alphas_init):
     alphas_inoise[i_n] = als
     as_inoise[i_n] = active_set.sum()
 
-
 # #############################
-import matplotlib
 matplotlib.rc('xtick', labelsize=16)
 matplotlib.rc('ytick', labelsize=16)
 # plt.rc('text', usetex=True)

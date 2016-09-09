@@ -291,7 +291,7 @@ def _mixed_norm_solver_bcd(M, G, alpha, lipschitz_constant, maxit=200,
     for i in range(maxit):
         for j in range(n_positions):
             idx = slice(j * n_orient, (j + 1) * n_orient)
-            1/0
+
             G_j = G[:, idx]
             X_j = X[idx]
 
@@ -382,6 +382,8 @@ def mixed_norm_solver(M, G, alpha, maxit=3000, tol=1e-8, verbose=None,
     alpha_max = norm_l2inf(np.dot(G.T, M), n_orient, copy=False)
     logger.info("-- ALPHA MAX : %s" % alpha_max)
     # alpha = float(alpha)
+    alpha = (np.tile(alpha, [n_orient, 1]).ravel(order='F')
+             if np.shape(alpha) else alpha)
 
     has_sklearn = False
     # try:
@@ -786,10 +788,11 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
                     p_obj = \
                         0.5 * linalg.norm(M - np.dot(G[:, active_set],  X),
                                           'fro') ** 2. + \
-                        np.sum(alpha[active_set] * g(X))
+                        np.sum(alpha[active_set][::n_orient] * g(X))
                 else:
                     p_obj = 0.5 * linalg.norm(M - np.dot(G[:, active_set],  X),
-                                              'fro') ** 2. + alpha * np.sum(g(X))
+                                              'fro') ** 2. + \
+                        alpha * np.sum(g(X))
                 E.append(p_obj)
 
                 # Check convergence
