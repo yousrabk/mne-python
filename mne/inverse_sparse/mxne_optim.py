@@ -721,7 +721,7 @@ def mixed_norm_solver_hyperparam(M, G, alpha, hp_iter, maxit=3000,
     return X, active_set, E, alphas
 
 
-def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
+def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=9,
                                            maxit=3000, tol=1e-8, verbose=None,
                                            active_set_size=50, debias=True,
                                            n_orient=1, solver='auto',
@@ -739,7 +739,6 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
 
     # Compute the parameter a of the Gamma distribution
     alpha_max = norm_l2inf(np.dot(G.T, M), n_orient, copy=False)
-    # 1/0
     mode = alpha_max / 2.
     a = mode * b + 1.
 
@@ -768,8 +767,8 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
                 else:
                     X, _active_set, _ = mixed_norm_solver(
                         M, G_tmp, alpha_tmp, debias=False, n_orient=n_orient,
-                        maxit=maxit, tol=tol, active_set_size=None, solver=solver,
-                        verbose=verbose)
+                        maxit=maxit, tol=tol, active_set_size=None,
+                        solver=solver, verbose=verbose)
             else:
                 X, _active_set, _ = mixed_norm_solver(
                     M, G_tmp, alpha_tmp, debias=False, n_orient=n_orient,
@@ -811,6 +810,7 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
         # alpha_max *= 0.01
         # alpha_max = 1.
 
+        # 1/0
         if np.shape(alpha):
             # gX = np.ones((active_set.shape)) * np.sum(g(X))
             gX = (g(X) if (n_orient == 1) else
@@ -832,7 +832,7 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=20,
         bias = compute_bias(M, G[:, active_set], X, n_orient=n_orient)
         X *= bias[:, np.newaxis]
 
-    alphas = np.array(alphas)[:, :5] if np.shape(alpha) else alphas
+    alphas = np.array(alphas)[:, active_set] if np.shape(alpha) else alphas
     return X, active_set, E, alphas
 
 

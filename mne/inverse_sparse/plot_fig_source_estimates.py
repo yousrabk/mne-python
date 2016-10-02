@@ -199,10 +199,20 @@ ax1.set_ylim([-0.1, 1.])
 ax1.set_yticks(np.arange(0., 1.1, 0.2))
 ax1.set_ylabel('Source Amplitude', fontsize=fontsize)
 # ax1.set_title('(a)', loc='left')
-ax1.set_title(r'(a) $\ell_{2,1}$ - one hyperparam')
+ax1.set_title(r'(a) $\ell_{2,1}$ - $\lambda\in R$')
 # ax1.set_title('one hyperparam', loc='right')
 
 # irmxne with one hp
+# ## Legend
+ax2.plot(stc.times * 1000, stc.data.T * -10 - 5, '*',
+         color='black', label='Simulated')
+ax2.axhline(-10, color='black',
+            label='Estimated', linewidth=2)
+handles, labels = ax2.get_legend_handles_labels()
+plt.legend([handles[0], handles[-1]], [labels[0], labels[1]],
+           bbox_to_anchor=(0.48, 2.45), loc=1, borderaxespad=0., ncol=4)
+######
+
 ax2.plot(stc.times * 1000, stc.data.T, '*', color=col,
          label='Simulated')
 ax2.plot(stc.times * 1000, X_est_i.T, color=col, label='Estimated')
@@ -213,7 +223,7 @@ ax2.set_yticks(np.arange(0., 1.1, 0.2))
 ax2.set_ylabel('Source Amplitude', fontsize=fontsize)
 ax2.set_xlabel('Time (ms)', fontsize=fontsize)
 # ax2.set_title('(b)', loc='left')
-ax2.set_title(r'(b) $\ell_{2,0.5}$ - one hyperparam')
+ax2.set_title(r'(b) $\ell_{2,0.5}$ - $\lambda\in R$')
 # ax2.set_title('one hyperparam', loc='right')
 
 # mxne with a vector of hp
@@ -226,7 +236,8 @@ ax3.set_ylim([-0.1, 1.])
 ax3.set_yticks(np.arange(0., 1.1, 0.2))
 ax3.set_yticklabels([])
 # ax3.set_title('(c)', loc='left')
-ax3.set_title(r'(c) $\ell_{2,1}$ - hyperparam per source')
+# ax3.set_title(r'(c) $\ell_{2,1}$ - $\lambda\in\mathbb{R}^S$')
+ax3.set_title(r'(c) $\ell_{2,1}$ - $\lambda\in R^S$')
 # ax3.set_title('hp per source', loc='right')
 
 # # irmxne with a vector of hp
@@ -248,8 +259,8 @@ for i, ax in zip(range(len(datas)), axes):
         ax.plot(stc.times * 1000, stc.data[j], '*', color=col)
         ax.plot(stc.times * 1000, data, color=col)
 
-handles, labels = ax2.get_legend_handles_labels()
-plt.legend([handles[0], handles[-1]], [labels[0], labels[-1]],
-           bbox_to_anchor=(0.48, 2.45), loc=1, borderaxespad=0., ncol=4)
+# handles, labels = ax2.get_legend_handles_labels()
+# plt.legend([handles[0], handles[-1]], [labels[0], labels[-1]],
+#            bbox_to_anchor=(0.48, 2.45), loc=1, borderaxespad=0., ncol=4)
 # plt.tight_layout()
 plt.show()

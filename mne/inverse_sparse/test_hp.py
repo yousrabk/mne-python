@@ -1,6 +1,11 @@
+""".
+
+test
+
+"""
 
 import mne
-from mne.datasets import sample, somato
+from mne.datasets import sample  # , somato
 from mne.inverse_sparse import mixed_norm
 from mne.minimum_norm import make_inverse_operator, apply_inverse
 from mne.viz import plot_sparse_source_estimates
@@ -41,14 +46,14 @@ forward = mne.read_forward_solution(fwd_fname, surf_ori=True)
 
 # ylim = dict(eeg=[-10, 10], grad=[-400, 400], mag=[-600, 600])
 # evoked.plot(ylim=ylim, proj=True)
-	
+
 ###############################################################################
 # Run solver
 loose, depth = 0.2, 0.9  # loose orientation & depth weighting
 update_alpha = True
 if update_alpha:
-    alpha = 60. #* np.ones((forward['sol']['data'].shape[1],))
-    n_mxne_iter = 10  # if > 1 use L0.5/L2 reweighted mixed norm solve
+    alpha = 80. * np.ones((forward['sol']['data'].shape[1],))
+    n_mxne_iter = 1  # if > 1 use L0.5/L2 reweighted mixed norm solve
     # if n_mxne_iter > 1 dSPM weighting can be avoided.
 else:
     alpha = 50.
@@ -75,11 +80,12 @@ hp = '- hp estimated' if update_alpha else '- no estimation'
 if condition == 'Unknown':
     condition = 'mind'
 if n_mxne_iter == 1:
-	solver = "MxNE"
+    solver = "MxNE"
 else:
-	solver = "irMxNE"
+    solver = "irMxNE"
 plot_sparse_source_estimates(forward['src'], stc, bgcolor=(1, 1, 1),
-                             fig_name="%s (cond %s) %s" % (solver, condition, hp),
+                             fig_name="%s (cond %s) %s" % (solver, condition,
+                                                           hp),
                              opacity=0.1)
 
 # # and on the fsaverage brain after morphing

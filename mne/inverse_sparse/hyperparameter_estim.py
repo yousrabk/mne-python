@@ -167,7 +167,7 @@ mode = alpha_max * 100 / 2.
 b = 1.
 a = mode * b + 1.
 
-alpha = .5 * np.ones((X.shape[0],))
+alpha = .8 * np.ones((X.shape[0],))
 # alpha = 10.
 # alpha = 242.4 * np.ones((X.shape[0],))
 # alpha[0] = 10.10

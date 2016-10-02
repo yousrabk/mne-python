@@ -317,12 +317,17 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
     else:
         if update_alpha:
             iterative_solver = iterative_mixed_norm_solver_hyperparam
+            X, active_set, E, alphas = iterative_solver(
+                M, gain, alpha, n_mxne_iter, maxit=maxit, tol=tol,
+                n_orient=n_dip_per_pos, active_set_size=active_set_size,
+                debias=debias, solver=solver, hp_iter=hp_iter,
+                update_alpha=True, verbose=verbose)
         else:
             iterative_solver = iterative_mixed_norm_solver
-        X, active_set, E, alphas = iterative_solver(
-            M, gain, alpha, n_mxne_iter, maxit=maxit, tol=tol,
-            n_orient=n_dip_per_pos, active_set_size=active_set_size,
-            debias=debias, solver=solver, verbose=verbose)
+            X, active_set, E, alphas = iterative_solver(
+                M, gain, alpha, n_mxne_iter, maxit=maxit, tol=tol,
+                n_orient=n_dip_per_pos, active_set_size=active_set_size,
+                debias=debias, solver=solver, verbose=verbose)
 
     if mask is not None:
         active_set_tmp = np.zeros(len(mask), dtype=np.bool)
@@ -366,7 +371,7 @@ def mixed_norm(evoked, forward, noise_cov, alpha, loose=0.2, depth=0.8,
 
     if return_residual:
         out = out, residual
-    if not update_alpha or n_mxne_iter == 1:
+    if not update_alpha and n_mxne_iter == 1:
         alphas = alpha
     return out, alphas
 
