@@ -10,7 +10,7 @@ from mne.inverse_sparse import mixed_norm
 from mne.minimum_norm import make_inverse_operator, apply_inverse
 from mne.viz import plot_sparse_source_estimates
 
-import numpy as np
+# import numpy as np
 
 data = 'sample'
 if data == 'sample':
@@ -38,7 +38,10 @@ elif data == 'somato':
 cov = mne.read_cov(cov_fname)
 # Handling average file
 evoked = mne.read_evokeds(ave_fname, condition=condition, baseline=(None, 0))
-evoked.crop(tmin=0.04, tmax=0.18)
+if data == 'sample':
+    evoked.crop(tmin=0.04, tmax=0.18)
+else:
+    evoked.crop(tmin=0.008, tmax=0.25)
 
 evoked = evoked.pick_types(eeg=False, meg=True)
 # Handling forward solution
@@ -52,8 +55,8 @@ forward = mne.read_forward_solution(fwd_fname, surf_ori=True)
 loose, depth = 0.2, 0.9  # loose orientation & depth weighting
 update_alpha = True
 if update_alpha:
-    alpha = 80. * np.ones((forward['sol']['data'].shape[1],))
-    n_mxne_iter = 1  # if > 1 use L0.5/L2 reweighted mixed norm solve
+    alpha = 80.  # * np.ones((forward['sol']['data'].shape[1],))
+    n_mxne_iter = 10  # if > 1 use L0.5/L2 reweighted mixed norm solve
     # if n_mxne_iter > 1 dSPM weighting can be avoided.
 else:
     alpha = 50.
@@ -70,7 +73,7 @@ out = mixed_norm(evoked, forward, cov, alpha, loose=loose, depth=depth,
                  maxit=3000, tol=1e-4, active_set_size=50, debias=True,
                  weights=stc_dspm, weights_min=8., n_mxne_iter=n_mxne_iter,
                  return_residual=True, update_alpha=update_alpha,
-                 time_pca=False)
+                 time_pca=False, verbose=True)
 # residual.plot(ylim=ylim, proj=True)
 (stc, residual), alphas = out
 

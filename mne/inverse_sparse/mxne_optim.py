@@ -811,21 +811,25 @@ def iterative_mixed_norm_solver_hyperparam(M, G, alpha, n_mxne_iter, hp_iter=9,
         # alpha_max = 1.
 
         # 1/0
+
         if np.shape(alpha):
+            scale = np.shape(X)[1]
             # gX = np.ones((active_set.shape)) * np.sum(g(X))
             gX = (g(X) if (n_orient == 1) else
                   np.tile(g(X), [n_orient, 1]).ravel(order='F'))
-            alpha[active_set] = (64. / k + a) / (gX + b)
+            alpha[active_set] = (scale / k + a) / (gX + b)
             # alpha = (64. / k + a) / (gX + b)
             # 1/0
         else:
-            alpha = (64. / k + a) / (np.sum(g(X)) + b)
+            scale = np.shape(X)[0] * np.shape(X)[1]
+            alpha = (scale / k + a) / (np.sum(g(X)) + np.shape(X)[1])
             # 1/0
             logger.info('alpha: %s' % alpha)
         alphas.append(alpha)
 
         if abs(alphas[-2] - alphas[-1]).max() < 1e-2:
-            logger.info('Hyperparameter estimated: Convergence reached after %d iterations!' % i_hp)
+            logger.info('Hyperparameter estimated: Convergence reached after'
+                        '  %d iterations!' % i_hp)
             break
 
     if np.any(active_set) and debias:
