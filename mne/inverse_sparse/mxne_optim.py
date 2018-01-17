@@ -5,6 +5,7 @@ from __future__ import print_function
 # License: Simplified BSD
 
 from math import sqrt, ceil
+from copy import deepcopy
 
 import numpy as np
 from scipy import linalg
@@ -727,7 +728,7 @@ def norm_l21_tf_multidict(Z, n_orient):
 def norm_l1_tf_multidict(Z, n_orient):
     if Z.shape[0]:
         l1_norm = np.sqrt(np.sum((np.abs(Z) ** 2.).reshape((n_orient, -1),
-                  order='F'), axis=0)).sum()
+                                 order='F'), axis=0)).sum()
     else:
         l1_norm = 0.
     return l1_norm
@@ -751,96 +752,6 @@ def test_multidict(x, wsize=np.array([64]), tstep=np.array([4])):
     E3 = stft_norm2_multidict(z_out)
 
     return z_out, x_out, E1, E2, E3
-
-
-def prox_l21(Y, alpha, n_orient, shape=None, is_stft=False):
-    """proximity operator for l21 norm
-
-    L2 over columns and L1 over rows => groups contain n_orient rows.
-
-    It can eventually take into account the negative frequencies
-    when a complex value is passed and is_stft=True.
-
-    Example
-    -------
-    >>> Y = np.tile(np.array([0, 4, 3, 0, 0], dtype=np.float), (2, 1))
-    >>> Y = np.r_[Y, np.zeros_like(Y)]
-    >>> print(Y)
-    [[ 0.  4.  3.  0.  0.]
-     [ 0.  4.  3.  0.  0.]
-     [ 0.  0.  0.  0.  0.]
-     [ 0.  0.  0.  0.  0.]]
-    >>> Yp, active_set = prox_l21(Y, 2, 2)
-    >>> print(Yp)
-    [[ 0.          2.86862915  2.15147186  0.          0.        ]
-     [ 0.          2.86862915  2.15147186  0.          0.        ]]
-    >>> print(active_set)
-    [ True  True False False]
-    """
-    if len(Y) == 0:
-        return np.zeros_like(Y), np.zeros((0,), dtype=np.bool)
-    # if shape is not None:
-    #     shape_init = Y.shape
-    #     Y = Y.reshape(*shape)
-    n_positions = Y.shape[0] // n_orient
-
-    if is_stft:
-        rows_norm = np.sqrt(stft_norm2_multidict(Y).reshape(n_positions,
-            -1).sum(axis=1))
-    else:
-        rows_norm = np.sqrt(np.sum((np.abs(Y) ** 2).reshape(n_positions, -1),
-                                   axis=1))
-    # Ensure shrink is >= 0 while avoiding any division by zero
-    shrink = np.maximum(1.0 - alpha / np.maximum(rows_norm, alpha), 0.0)
-    active_set = shrink > 0.0
-    if n_orient > 1:
-        active_set = np.tile(active_set[:, None], [1, n_orient]).ravel()
-        shrink = np.tile(shrink[:, None], [1, n_orient]).ravel()
-    Y = Y[active_set]
-    # if shape is None:
-    #     Y *= shrink[active_set][:, np.newaxis]
-    # else:
-    #     Y *= shrink[active_set][:, np.newaxis, np.newaxis]
-    #     Y = Y.reshape(-1, *shape_init[1:])
-    Y *= shrink[active_set][:, np.newaxis]
-    return Y, active_set
-
-
-def prox_l1(Y, alpha, n_orient):
-    """proximity operator for l1 norm with multiple orientation support
-
-    L2 over orientation and L1 over position (space + time)
-
-    Example
-    -------
-    >>> Y = np.tile(np.array([1, 2, 3, 2, 0], dtype=np.float), (2, 1))
-    >>> Y = np.r_[Y, np.zeros_like(Y)]
-    >>> print(Y)
-    [[ 1.  2.  3.  2.  0.]
-     [ 1.  2.  3.  2.  0.]
-     [ 0.  0.  0.  0.  0.]
-     [ 0.  0.  0.  0.  0.]]
-    >>> Yp, active_set = prox_l1(Y, 2, 2)
-    >>> print(Yp)
-    [[ 0.          0.58578644  1.58578644  0.58578644  0.        ]
-     [ 0.          0.58578644  1.58578644  0.58578644  0.        ]]
-    >>> print(active_set)
-    [ True  True False False]
-    """
-    n_positions = Y.shape[0] // n_orient
-    norms = np.sqrt(np.sum((np.abs(Y) ** 2).T.reshape(-1, n_orient), axis=1))
-    # Ensure shrink is >= 0 while avoiding any division by zero
-    shrink = np.maximum(1.0 - alpha / np.maximum(norms, alpha), 0.0)
-    shrink = shrink.reshape(-1, n_positions).T
-    active_set = np.any(shrink > 0.0, axis=1)
-    shrink = shrink[active_set]
-    if n_orient > 1:
-        active_set = np.tile(active_set[:, None], [1, n_orient]).ravel()
-    Y = Y[active_set]
-    if len(Y) > 0:
-        for o in range(n_orient):
-            Y[o::n_orient] *= shrink
-    return Y, active_set
 
 
 @verbose
@@ -919,7 +830,7 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
     G = dict(zip(np.arange(n_positions), np.hsplit(G, n_positions)))
 
     R = M.copy()  # residual
-    active = np.where(active_set == True)[0][::n_orient] // n_orient
+    active = np.where(active_set)[0][::n_orient] // n_orient
     for idx in active:
         R -= np.dot(G[idx], phiT(Z[idx]))
 
@@ -934,18 +845,17 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
     else:
         alpha_space_lc = alpha_space * w_space / lipschitz_constant
 
-    for i in xrange(maxit):
+    for i in range(maxit):
         val_norm_l21_tf = 0.0
         val_norm_l1_tf = 0.0
         max_diff = 0.0
-        for j in xrange(n_positions):
+        for j in range(n_positions):
             ids = j * n_orient
             ide = ids + n_orient
 
-            G_j = G[jj]
-            Z_j = Z[jj]
+            G_j = G[j]
+            Z_j = Z[j]
             active_set_j = active_set[ids:ide]
-
             Z0 = deepcopy(Z_j)
 
             was_active = np.any(active_set_j)
@@ -953,7 +863,6 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
             # gradient step
             PhiGTR = phi(np.dot(G_j.T, R)) / lipschitz_constant[j]
             Z_j_new = PhiGTR.copy()
-
             if was_active:
                 Z_j_new += Z_j
                 R += np.dot(G_j, phiT(Z_j))
@@ -974,19 +883,20 @@ def _tf_mixed_norm_solver_bcd_(M, G, Z, active_set, alpha_space, alpha_time,
                     Z[j] = 0.0
                     active_set_j[:] = False
                 else:
-                    shrink = np.maximum(1.0 - alpha_space_lc[j] / row_norm, 0.0)
+                    shrink = np.maximum(1.0 - alpha_space_lc[j] / row_norm,
+                                        0.0)
                     Z[j] = Z_j_new.copy() * shrink
                     active_set_j[:] = True
                     R -= np.dot(G_j, phiT(Z[j]))
                     if w_space is None:
                         val_norm_l21_tf += norm_l21_tf_multidict(Z[j],
-                            n_orient)
+                                                                 n_orient)
                     else:
                         val_norm_l21_tf += w_space[j] * norm_l21_tf_multidict(
                             Z[j], n_orient)
                     if w_time is None:
                         val_norm_l1_tf += norm_l1_tf_multidict(Z[j],
-                            n_orient)
+                                                               n_orient)
                     else:
                         val_norm_l1_tf += norm_l1_tf_multidict(
                             Z[j] * w_time[j][None, :], n_orient)
@@ -1028,7 +938,7 @@ def _tf_mixed_norm_solver_bcd_active_set(
     else:
         active_set = np.zeros(n_sources, dtype=np.bool)
         active = list()
-        for i in xrange(n_positions):
+        for i in range(n_positions):
             if np.any(Z_init[i * n_orient:(i + 1) * n_orient]):
                 active_set[i * n_orient:(i + 1) * n_orient] = True
                 active.append(i)
@@ -1047,7 +957,7 @@ def _tf_mixed_norm_solver_bcd_active_set(
     i = 0
     while active_set.sum():
         i += 1
-        active = np.where(active_set == True)[0][::n_orient] // n_orient
+        active = np.where(active_set)[0][::n_orient] // n_orient
         Z_init = dict(zip(range(len(active)), [Z[idx] for idx in active]))
 
         if w_space is None:
@@ -1058,9 +968,10 @@ def _tf_mixed_norm_solver_bcd_active_set(
             _w_time = None
         else:
             _w_time = w_time[active_set[::n_orient]]
-        Z, as_, E_tmp = _tf_mixed_norm_solver_bcd_(M,
-            G[:, active_set], Z_init, np.ones(len(active) * n_orient,
-            dtype=np.bool), alpha_space, alpha_time,
+        Z, as_, E_tmp = _tf_mixed_norm_solver_bcd_(
+            M, G[:, active_set], Z_init, np.ones(len(active) * n_orient,
+                                                 dtype=np.bool),
+            alpha_space, alpha_time,
             lipschitz_constant[active_set[::n_orient]],
             phi, phiT, w_space=_w_space, w_time=_w_time, wsize=wsize,
             tstep=tstep, n_orient=n_orient,
@@ -1068,15 +979,15 @@ def _tf_mixed_norm_solver_bcd_active_set(
             verbose=verbose)
         E += E_tmp
 
-        active = np.where(active_set == True)[0][::n_orient] // n_orient
+        active = np.where(active_set)[0][::n_orient] // n_orient
         Z_init = dict.fromkeys(np.arange(n_positions), 0.0)
         Z_init.update(dict(zip(active, list(Z.values()))))
         active_set[active_set] = as_.copy()
         active_set_0 = active_set.copy()
-        Z, active_set, E_tmp = _tf_mixed_norm_solver_bcd_(M, G,
-            Z_init, active_set, alpha_space, alpha_time, lipschitz_constant,
-            phi, phiT, w_space=w_space, w_time=w_time, wsize=wsize,
-            tstep=tstep, n_orient=n_orient, maxit=1, tol=tol,
+        Z, active_set, E_tmp = _tf_mixed_norm_solver_bcd_(
+            M, G, Z_init, active_set, alpha_space, alpha_time,
+            lipschitz_constant, phi, phiT, w_space=w_space, w_time=w_time,
+            wsize=wsize, tstep=tstep, n_orient=n_orient, maxit=1, tol=tol,
             log_objective=log_objective, check_convergence=False,
             verbose=verbose)
         E += E_tmp
@@ -1110,13 +1021,13 @@ def compute_alpha_max(G, M, phi, alpha_space, alpha_time, n_orient):
         from scipy.optimize import brentq
         rho = alpha_time / (alpha_space + alpha_time)
         alpha_max = 0.0
-        for idx in xrange(n_positions):
+        for idx in range(n_positions):
             idx_k = slice(n_orient * idx, n_orient * (idx + 1))
             GTM = np.abs(np.dot(G[:, idx_k].T, M)) ** 2.
             GTM = np.sqrt(np.sum(GTM, axis=0))
             max_alpha = np.max(np.abs(GTM)) / rho
             alpha_max_tmp = brentq(alpha_max_fun, 0., max_alpha,
-                                   args=(rho , GTM))
+                                   args=(rho, GTM))
             if alpha_max_tmp > alpha_max:
                 alpha_max = alpha_max_tmp
     else:
@@ -1241,7 +1152,7 @@ def tf_mixed_norm_solver(M, G, alpha_space, alpha_time, w_space=None, w_time=Non
             G_tmp = G[:, (j * n_orient):((j + 1) * n_orient)]
             lc[j] = linalg.norm(np.dot(G_tmp.T, G_tmp), ord=2)
 
-    X, Z, active_set, E, timeline = _tf_mixed_norm_solver_bcd_active_set(
+    X, Z, active_set, E = _tf_mixed_norm_solver_bcd_active_set(
         M, G, alpha_space, alpha_time, lc, phi, phiT, Z_init=None,
         w_space=w_space, w_time=w_time, wsize=wsize, tstep=tstep,
         n_orient=n_orient, maxit=maxit, tol=tol,

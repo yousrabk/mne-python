@@ -5,6 +5,7 @@
 
 import numpy as np
 from scipy import linalg, signal
+from copy import deepcopy
 
 from ..source_estimate import (SourceEstimate, VolSourceEstimate,
                                _BaseSourceEstimate)
@@ -58,9 +59,9 @@ def _prepare_weights(forward, gain, source_weighting, weights, weights_min):
 def _prepare_gain_column(forward, info, noise_cov, pca, depth, loose, weights,
                          weights_min, verbose=None):
 
-    if loose is None and not is_fixed_orient(forward):
-        forward = deepcopy(forward)
-        _to_fixed_ori(forward)
+    # if loose is None and not is_fixed_orient(forward):
+    #     forward = deepcopy(forward)
+    #     _to_fixed_ori(forward)
 
     gain_info, gain, _, whitener, _ = _prepare_forward(forward, info,
                                                        noise_cov, pca)
@@ -103,9 +104,9 @@ def _prepare_gain_column(forward, info, noise_cov, pca, depth, loose, weights,
 def _prepare_gain_frobenius(forward, info, noise_cov, pca, depth, loose,
                             weights, weights_min, verbose=None):
 
-    if loose is None and not is_fixed_orient(forward):
-        forward = deepcopy(forward)
-        _to_fixed_ori(forward)
+    # if loose is None and not is_fixed_orient(forward):
+    #     forward = deepcopy(forward)
+    #     _to_fixed_ori(forward)
 
     gain_info, gain, _, whitener, _ = _prepare_forward(forward, info,
                                                        noise_cov, pca)
@@ -144,9 +145,9 @@ def _prepare_gain_spectral(forward, info, noise_cov, pca, depth, loose,
                            weights, weights_min, limit_depth_chs=True,
                            verbose=None):
 
-    if loose is None and not is_fixed_orient(forward):
-        forward = deepcopy(forward)
-        _to_fixed_ori(forward)
+    # if loose is None and not is_fixed_orient(forward):
+    #     forward = deepcopy(forward)
+    #     _to_fixed_ori(forward)
 
     gain_info, gain, _, whitener, _ = _prepare_forward(forward, info,
                                                        noise_cov, pca)
@@ -194,9 +195,9 @@ def _prepare_gain_sloreta(forward, info, noise_cov, pca, depth, loose,
 
     """
 
-    if loose is None and not is_fixed_orient(forward):
-        forward = deepcopy(forward)
-        _to_fixed_ori(forward)
+    # if loose is None and not is_fixed_orient(forward):
+    #     forward = deepcopy(forward)
+    #     _to_fixed_ori(forward)
 
     gain_info, gain, _, whitener, _ = _prepare_forward(forward, info,
                                                        noise_cov, pca)
@@ -247,9 +248,9 @@ def _prepare_gain_vestal(forward, info, noise_cov, pca, depth, loose,
                          weights, weights_min, limit_depth_chs=True,
                          verbose=None):
 
-    if loose is None and not is_fixed_orient(forward):
-        forward = deepcopy(forward)
-        _to_fixed_ori(forward)
+    # if loose is None and not is_fixed_orient(forward):
+    #     forward = deepcopy(forward)
+    #     _to_fixed_ori(forward)
 
     gain_info, gain, _, whitener, _ = _prepare_forward(forward, info,
                                                        noise_cov, pca)
@@ -725,7 +726,8 @@ def tf_mixed_norm(evoked, forward, noise_cov, alpha_space, alpha_time,
                   weights=None, weights_min=None, pca=True, debias=True,
                   wsize=64, tstep=4, window=0.02, n_tfmxne_iter=1,
                   log_objective=True, return_residual=False,
-                  depth_method='col', limit_depth_chs=True, verbose=None):
+                  depth_method='col', limit_depth_chs=True,
+                  return_as_dipoles=False, verbose=None):
     """Time-Frequency Mixed-norm estimate (TF-MxNE)
 
     Compute L1/L2 + L1 mixed-norm solution on time frequency
@@ -790,6 +792,8 @@ def tf_mixed_norm(evoked, forward, noise_cov, alpha_space, alpha_time,
         and right window length.
     debias: bool
         Remove coefficient amplitude bias due to L1 penalty.
+    return_as_dipoles : bool
+        If True, the sources are returned as a list of Dipole instances.
     return_residual : bool
         If True, the residual is returned as an Evoked instance.
     verbose: bool
@@ -825,13 +829,27 @@ def tf_mixed_norm(evoked, forward, noise_cov, alpha_space, alpha_time,
     all_ch_names = evoked.ch_names
     info = evoked.info
 
-    # if (alpha < 0.) or (alpha > 100.):
-    #     raise Exception('alpha must be in range [0, 100]. Got alpha = %f'
-    #                      % alpha)
+    if isinstance(tstep, int):
+        tstep = np.array([tstep])
+    if isinstance(wsize, int):
+        wsize = np.array([wsize])
 
-    # if (rho < 0.) or (rho > 1.):
-    #     raise Exception('rho must be in range [0, 1]. Got rho = %f'
-    #                      % rho)
+    if (alpha_space < 0.) or (alpha_space > 100.):
+        raise Exception('alpha_space must be in range [0, 100].'
+                        ' Got alpha_space = %f' % alpha_space)
+
+    if (alpha_time < 0.) or (alpha_time > 100.):
+        raise Exception('alpha_time must be in range [0, 100].'
+                        ' Got alpha_time = %f' % alpha_time)
+
+    loose, forward = _check_loose_forward(loose, forward)
+
+    # put the forward solution in fixed orientation if it's not already
+    if loose == 0. and not is_fixed_orient(forward):
+        forward = convert_forward_solution(
+            forward, surf_ori=True, force_fixed=True, copy=True, use_cps=True)
+
+    n_dip_per_pos = 1 if is_fixed_orient(forward) else 3
 
     gain, gain_info, whitener, source_weighting, mask = _prepare_gain(
         forward, evoked.info, noise_cov, pca, depth, loose, weights,
@@ -847,12 +865,6 @@ def tf_mixed_norm(evoked, forward, noise_cov, alpha_space, alpha_time,
     # Whiten data
     logger.info('Whitening data matrix.')
     M = np.dot(whitener, M)
-
-    # put the forward solution in fixed orientation if it's not already
-    if loose is None and not is_fixed_orient(forward):
-        forward = deepcopy(forward)
-        _to_fixed_ori(forward)
-    n_dip_per_pos = 1 if is_fixed_orient(forward) else 3
 
     if n_tfmxne_iter == 1:
         X, active_set, E = tf_mixed_norm_solver(
@@ -897,8 +909,8 @@ def tf_mixed_norm(evoked, forward, noise_cov, alpha_space, alpha_time,
     logger.info('[done]')
 
     if return_residual:
-        out = stc, Xout, E, active_set, residual
+        out = stc, residual
     else:
-        out = stc, Xout, E
+        out = stc
 
     return out

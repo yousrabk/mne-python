@@ -13,8 +13,9 @@ fwd_fname = data_path + 'mind006_051209_median01_raw-oct-6-fwd.fif'
 
 evoked = mne.read_evokeds(ave_fname, condition=0, baseline=(None, 0))
 noise_cov = mne.read_cov(cov_fname)
-forward = mne.read_forward_solution(fwd_fname, surf_ori=True,
-                                    force_fixed=False)
+# forward = mne.read_forward_solution(fwd_fname, surf_ori=True,
+#                                     force_fixed=False)
+forward = mne.read_forward_solution(fwd_fname)
 
 # Parameters
 wsize = np.array([64, 16])
@@ -23,14 +24,14 @@ tstep = np.array([4, 2])
 alpha, rho = 30., 0.05
 alpha_space = (1. - rho) * alpha
 alpha_time = alpha * rho
-alpha_space = 10.
-alpha_time = 1.1
+alpha_space = 20.
+alpha_time = 2.
 
 window = 0.01
 
 loose = 1.0
 depth = 0.9
-depth_method='vestal'
+depth_method = 'vestal'
 maxit = 10000
 tol = 1e-6
 
@@ -64,6 +65,3 @@ residual.plot(titles=dict(grad='Residuals: Gradiometers'), ylim=ylim,
 plot_sparse_source_estimates(forward['src'], stc, bgcolor=(1, 1, 1),
                              opacity=0.1, fig_name="irTF-MxNE",
                              modes=['sphere'], scale_factors=[1.])
-
-
-
