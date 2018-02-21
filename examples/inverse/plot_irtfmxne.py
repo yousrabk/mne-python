@@ -23,14 +23,14 @@ tstep = np.array([4, 2])
 alpha, rho = 30., 0.05
 alpha_space = (1. - rho) * alpha
 alpha_time = alpha * rho
-alpha_space = 10.
-alpha_time = 1.1
+alpha_space = 25.
+alpha_time = 3.5
 
 window = 0.01
 
 loose = 1.0
 depth = 0.9
-depth_method='vestal'
+depth_method='col'
 maxit = 10000
 tol = 1e-6
 
@@ -38,12 +38,14 @@ tmin, tmax = 0.008, 0.21
 evoked.crop(tmin, tmax)
 evoked.resample(1000.)
 
-stc, residual = tf_mixed_norm(
+out = tf_mixed_norm(
     evoked, forward, noise_cov, alpha_space, alpha_time, loose=loose,
     depth=depth, maxit=maxit, tol=tol, wsize=wsize, tstep=tstep,
     window=window, n_tfmxne_iter=1000, return_residual=True,
     depth_method=depth_method, verbose=True)
 
+stc = out[0]
+residual = out[-1]
 # Crop to remove edges
 stc.crop(tmin=0.01, tmax=0.2)
 evoked.crop(tmin=0.01, tmax=0.2)
